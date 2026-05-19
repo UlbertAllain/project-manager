@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Project } from "@/lib/types";
 import {
   STATUS_LABELS,
@@ -53,6 +53,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
+import { DeleteConfirmDialog } from "@/components/project/DeleteConfirmDialog";
 
 interface ProjectsViewProps {
   onSelectProject: (id: string) => void;
@@ -62,11 +64,29 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Debounce search
+  const searchTimer = useRef<NodeJS.Timeout | null>(null);
+  const handleSearchChange = useCallback((val: string) => {
+    setSearch(val);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setDebouncedSearch(val);
+    }, 300);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
 
   // Form state
   const [form, setForm] = useState({
@@ -233,8 +253,6 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Yakin ingin menghapus project ini?")) return;
-
     try {
       const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
       if (!res.ok) {
@@ -245,18 +263,23 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
       fetchProjects();
     } catch {
       toast.error("Terjadi kesalahan server");
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
-  // Filter
-  const filtered = projects.filter((p) => {
-    const matchSearch =
-      p.projectName.toLowerCase().includes(search.toLowerCase()) ||
-      p.clientName.toLowerCase().includes(search.toLowerCase());
-    const matchStatus =
-      statusFilter === "ALL" || p.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  // Filter with debounce
+  const filtered = useMemo(() => {
+    return projects.filter((p) => {
+      const matchSearch =
+        !debouncedSearch ||
+        p.projectName.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        p.clientName.toLowerCase().includes(debouncedSearch.toLowerCase());
+      const matchStatus =
+        statusFilter === "ALL" || p.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [projects, debouncedSearch, statusFilter]);
 
   const ProjectForm = ({ isEdit }: { isEdit: boolean }) => (
     <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -492,10 +515,15 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Cari project..."
-            className="w-full h-8 pl-8 pr-3 text-sm bg-base-card border border-base-border rounded-md text-text-main placeholder:text-text-subtle focus:outline-none focus:border-brand-primary"
+            className="w-full h-8 pl-8 pr-3 text-sm bg-base-card border border-base-border rounded-md text-text-main placeholder:text-text-subtle focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
           />
+          {search !== debouncedSearch && (
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+              <Loader2 className="w-3 h-3 animate-spin text-text-subtle" />
+            </div>
+          )}
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="h-8 w-36 text-xs bg-base-card border-base-border">
@@ -515,132 +543,153 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
 
       {/* Project Grid */}
       {filtered.length === 0 ? (
-        <div className="text-center py-16 text-text-subtle">
-          <FolderKanban className="w-8 h-8 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">Tidak ada project ditemukan</p>
+        <div className="text-center py-16">
+          <div className="w-12 h-12 rounded-full bg-base-hover mx-auto mb-3 flex items-center justify-center">
+            <FolderKanban className="w-6 h-6 text-text-subtle" />
+          </div>
+          <p className="text-sm text-text-subtle">
+            {debouncedSearch || statusFilter !== "ALL"
+              ? "Tidak ada project yang cocok dengan filter"
+              : "Belum ada project"}
+          </p>
+          <p className="text-xs text-text-subtle mt-1">
+            {debouncedSearch || statusFilter !== "ALL"
+              ? "Coba ubah filter atau kata kunci pencarian"
+              : "Buat project pertama untuk memulai"}
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((project) => {
-            const deadlineStatus = getDeadlineStatus(
-              project.status,
-              project.deadline
-            );
-            return (
-              <div
-                key={project.id}
-                className="bg-base-card border border-base-border rounded-lg p-4 hover:border-base-border/80 transition-colors cursor-pointer group"
-                onClick={() => onSelectProject(project.id)}
-              >
-                {/* Top row */}
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-text-main truncate group-hover:text-brand-primary transition-colors">
-                      {project.projectName}
-                    </h3>
-                    <p className="text-xs text-text-muted truncate">
-                      {project.clientName}
-                    </p>
+        <motion.div
+          layout
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
+        >
+          <AnimatePresence mode="popLayout">
+            {filtered.map((project) => {
+              const deadlineStatus = getDeadlineStatus(
+                project.status,
+                project.deadline
+              );
+              return (
+                <motion.div
+                  key={project.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="bg-base-card border border-base-border rounded-lg p-4 hover:border-base-border/80 transition-colors cursor-pointer group"
+                  onClick={() => onSelectProject(project.id)}
+                >
+                  {/* Top row */}
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-medium text-text-main truncate group-hover:text-brand-primary transition-colors">
+                        {project.projectName}
+                      </h3>
+                      <p className="text-xs text-text-muted truncate">
+                        {project.clientName}
+                      </p>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="p-1 rounded hover:bg-base-hover text-text-subtle hover:text-text-main opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectProject(project.id);
+                          }}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 mr-2" />
+                          Lihat Detail
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditDialog(project);
+                          }}
+                        >
+                          <Pencil className="w-3.5 h-3.5 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-red-400 focus:text-red-400"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(project.id);
+                          }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-2" />
+                          Hapus
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="p-1 rounded hover:bg-base-hover text-text-subtle hover:text-text-main opacity-0 group-hover:opacity-100"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreHorizontal className="w-3.5 h-3.5" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectProject(project.id);
-                        }}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5 mr-2" />
-                        Lihat Detail
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditDialog(project);
-                        }}
-                      >
-                        <Pencil className="w-3.5 h-3.5 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-red-400 focus:text-red-400"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(project.id);
-                        }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 mr-2" />
-                        Hapus
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
 
-                {/* Badges */}
-                <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] px-1.5 py-0 ${STATUS_BADGE_CLASSES[project.status] || ""}`}
-                  >
-                    {STATUS_LABELS[project.status] || project.status}
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] px-1.5 py-0 ${PRIORITY_BADGE_CLASSES[project.priority] || ""}`}
-                  >
-                    {project.priority}
-                  </Badge>
-                  {deadlineStatus === "OVERDUE" && (
+                  {/* Badges */}
+                  <div className="flex items-center gap-1.5 mb-3 flex-wrap">
                     <Badge
                       variant="outline"
-                      className="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-400 border-red-500/20"
+                      className={`text-[10px] px-1.5 py-0 ${STATUS_BADGE_CLASSES[project.status] || ""}`}
                     >
-                      Overdue
+                      {STATUS_LABELS[project.status] || project.status}
                     </Badge>
-                  )}
-                </div>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] px-1.5 py-0 ${PRIORITY_BADGE_CLASSES[project.priority] || ""}`}
+                    >
+                      {project.priority}
+                    </Badge>
+                    {deadlineStatus === "OVERDUE" && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-400 border-red-500/20"
+                      >
+                        Overdue
+                      </Badge>
+                    )}
+                  </div>
 
-                {/* Progress */}
-                <div className="mb-2">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-[11px] text-text-subtle">
-                      Progress
+                  {/* Progress */}
+                  <div className="mb-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[11px] text-text-subtle">
+                        Progress
+                      </span>
+                      <span className="text-[11px] text-text-muted">
+                        {project.progress}%
+                      </span>
+                    </div>
+                    <Progress value={project.progress} className="h-1.5" />
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex items-center justify-between text-[11px] text-text-subtle">
+                    <span>
+                      {project.budget > 0
+                        ? formatBudgetShort(project.budget)
+                        : "-"}
                     </span>
-                    <span className="text-[11px] text-text-muted">
-                      {project.progress}%
+                    <span>
+                      {project.deadline
+                        ? formatDate(project.deadline, {
+                            day: "numeric",
+                            month: "short",
+                          })
+                        : "-"}
                     </span>
                   </div>
-                  <Progress value={project.progress} className="h-1.5" />
-                </div>
-
-                {/* Footer */}
-                <div className="flex items-center justify-between text-[11px] text-text-subtle">
-                  <span>
-                    {project.budget > 0
-                      ? formatBudgetShort(project.budget)
-                      : "-"}
-                  </span>
-                  <span>
-                    {project.deadline
-                      ? formatDate(project.deadline, {
-                          day: "numeric",
-                          month: "short",
-                        })
-                      : "-"}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
       )}
 
       {/* Create Dialog */}
@@ -717,8 +766,15 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Hapus Project"
+        description="Yakin ingin menghapus project ini? Semua data termasuk tasks, transaksi, dan komentar akan ikut terhapus. Tindakan ini tidak dapat dibatalkan."
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+      />
     </div>
   );
 }
-
-

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/stores/auth-store";
 import { AppSidebar } from "./AppSidebar";
+import { BreadcrumbNav } from "./BreadcrumbNav";
 import { Menu } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -22,7 +23,6 @@ export function AppShell({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check auth on mount (hydrate from localStorage)
     const timer = setTimeout(() => setLoading(false), 100);
     return () => clearTimeout(timer);
   }, []);
@@ -68,17 +68,18 @@ export function AppShell({
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile header */}
-        <div className="flex items-center h-14 px-4 border-b border-base-border md:hidden shrink-0">
+        {/* Top bar with mobile menu + breadcrumbs */}
+        <div className="flex items-center h-12 px-4 border-b border-base-border shrink-0 gap-3">
+          {/* Mobile menu button */}
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded hover:bg-base-hover text-text-muted hover:text-text-main"
+            className="p-1.5 rounded hover:bg-base-hover text-text-muted hover:text-text-main md:hidden"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <span className="ml-3 text-sm font-semibold text-text-main">
-            Nexty Labs
-          </span>
+
+          {/* Breadcrumbs */}
+          <BreadcrumbNav currentView={currentView} onNavigate={onNavigate} />
         </div>
 
         {/* Content area */}

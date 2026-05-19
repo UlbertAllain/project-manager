@@ -9,6 +9,8 @@ import { ProjectsView } from "@/components/views/ProjectsView";
 import { ProjectDetailView } from "@/components/views/ProjectDetailView";
 import { BoardView } from "@/components/views/BoardView";
 import { FinanceView } from "@/components/views/FinanceView";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AnimatePresence, motion } from "framer-motion";
 
 type ViewType =
   | "login"
@@ -27,6 +29,12 @@ function useIsMounted() {
     () => false
   );
 }
+
+const pageVariants = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+};
 
 export default function Home() {
   const { isAuthenticated } = useAuthStore();
@@ -102,7 +110,7 @@ export default function Home() {
       case "board":
         return <BoardView onSelectProject={handleSelectProject} />;
       case "finance":
-        return <FinanceView />;
+        return <FinanceView onSelectProject={handleSelectProject} />;
       default:
         return (
           <DashboardView
@@ -115,7 +123,20 @@ export default function Home() {
 
   return (
     <AppShell currentView={effectiveView} onNavigate={handleNavigate}>
-      {renderContent()}
+      <ErrorBoundary>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={effectiveView + (selectedProjectId || "")}
+            variants={pageVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={{ duration: 0.15, ease: "easeOut" }}
+          >
+            {renderContent()}
+          </motion.div>
+        </AnimatePresence>
+      </ErrorBoundary>
     </AppShell>
   );
 }

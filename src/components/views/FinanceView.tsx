@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Transaction, Project } from "@/lib/types";
 import { PAYMENT_BADGE_CLASSES, STATUS_LABELS } from "@/lib/constants";
 import { formatRupiah, formatDate } from "@/lib/helpers";
@@ -19,9 +19,53 @@ import {
   Wallet,
   ArrowUpRight,
   ArrowDownRight,
+  BarChart3,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { motion } from "framer-motion";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
-export function FinanceView() {
+interface FinanceViewProps {
+  onSelectProject?: (id: string) => void;
+}
+
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color: string }>;
+  label?: string;
+}) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-base-card border border-base-border rounded-lg p-2 text-xs shadow-lg">
+        <p className="text-text-main font-medium mb-1">{label}</p>
+        {payload.map((p, i) => (
+          <p key={i} style={{ color: p.color }} className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: p.color }}
+            />
+            {p.name}: {formatRupiah(p.value)}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+export function FinanceView({ onSelectProject }: FinanceViewProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +107,47 @@ export function FinanceView() {
       ? transactions
       : transactions.filter((t) => t.projectId === projectFilter);
 
+  // Monthly chart data
+  const monthlyData = useMemo(() => {
+    const monthMap = new Map<
+      string,
+      { income: number; expense: number }
+    >();
+
+    const targetTransactions =
+      projectFilter === "ALL"
+        ? transactions
+        : transactions.filter((t) => t.projectId === projectFilter);
+
+    targetTransactions.forEach((tx) => {
+      const date = new Date(tx.date);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const existing = monthMap.get(key) || { income: 0, expense: 0 };
+      if (tx.type === "INCOME") {
+        existing.income += tx.amount;
+      } else {
+        existing.expense += tx.amount;
+      }
+      monthMap.set(key, existing);
+    });
+
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6)
+      .map(([month, data]) => {
+        const [y, m] = month.split("-");
+        const monthName = new Date(Number(y), Number(m) - 1).toLocaleString(
+          "id-ID",
+          { month: "short" }
+        );
+        return {
+          name: monthName,
+          Income: data.income,
+          Expense: data.expense,
+        };
+      });
+  }, [transactions, projectFilter]);
+
   // Project budget summary
   const projectBudgets = projects.map((p) => ({
     id: p.id,
@@ -90,7 +175,12 @@ export function FinanceView() {
   }
 
   return (
-    <div className="space-y-4 max-w-6xl">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className="space-y-4 max-w-6xl"
+    >
       <div>
         <h1 className="text-xl font-semibold text-text-main">Finance</h1>
         <p className="text-sm text-text-muted mt-0.5">
@@ -147,6 +237,64 @@ export function FinanceView() {
         </div>
       </div>
 
+      {/* Monthly Chart */}
+      <div className="bg-base-card border border-base-border rounded-lg p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-text-muted" />
+            <h3 className="text-sm font-medium text-text-main">
+              Income vs Expense (Bulanan)
+            </h3>
+          </div>
+          <Select value={projectFilter} onValueChange={setProjectFilter}>
+            <SelectTrigger className="h-7 w-44 text-xs bg-base-bg border-base-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Projects</SelectItem>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.projectName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {monthlyData.length === 0 ? (
+          <div className="h-48 flex items-center justify-center text-sm text-text-subtle">
+            Belum ada data transaksi
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart
+              data={monthlyData}
+              margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+            >
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 10, fill: "#71717a" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis hide />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar
+                dataKey="Income"
+                fill="#22c55e"
+                radius={[4, 4, 0, 0]}
+                maxBarSize={28}
+              />
+              <Bar
+                dataKey="Expense"
+                fill="#ef4444"
+                radius={[4, 4, 0, 0]}
+                maxBarSize={28}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
       {/* Project Budget Overview */}
       <div className="bg-base-card border border-base-border rounded-lg">
         <div className="p-4 border-b border-base-border">
@@ -156,14 +304,18 @@ export function FinanceView() {
         </div>
         <div className="divide-y divide-base-border max-h-64 overflow-y-auto">
           {projectBudgets.length === 0 ? (
-            <div className="p-4 text-center text-sm text-text-subtle">
-              Belum ada project
+            <div className="p-8 text-center">
+              <div className="w-10 h-10 rounded-full bg-base-hover mx-auto mb-3 flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-text-subtle" />
+              </div>
+              <p className="text-sm text-text-subtle">Belum ada project</p>
             </div>
           ) : (
             projectBudgets.map((pb) => (
               <div
                 key={pb.id}
-                className="px-4 py-3 flex items-center gap-4"
+                className="px-4 py-3 flex items-center gap-4 hover:bg-base-hover/30 cursor-pointer transition-colors"
+                onClick={() => onSelectProject?.(pb.id)}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
@@ -189,7 +341,7 @@ export function FinanceView() {
                     </span>
                   </div>
                 </div>
-                <div className="w-24">
+                <div className="w-24 shrink-0">
                   <div className="flex items-center justify-between text-[10px] text-text-subtle mb-0.5">
                     <span>Payment</span>
                     <span>
@@ -198,14 +350,10 @@ export function FinanceView() {
                         : "0%"}
                     </span>
                   </div>
-                  <div className="h-1.5 bg-base-bg rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-brand-primary rounded-full"
-                      style={{
-                        width: `${pb.budget > 0 ? (pb.paid / pb.budget) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
+                  <Progress
+                    value={pb.budget > 0 ? (pb.paid / pb.budget) * 100 : 0}
+                    className="h-1.5"
+                  />
                 </div>
               </div>
             ))
@@ -219,24 +367,19 @@ export function FinanceView() {
           <h3 className="text-sm font-medium text-text-main">
             Semua Transaksi
           </h3>
-          <Select value={projectFilter} onValueChange={setProjectFilter}>
-            <SelectTrigger className="h-7 w-44 text-xs bg-base-bg border-base-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Projects</SelectItem>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.projectName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <span className="text-[11px] text-text-subtle">
+            {filtered.length} transaksi
+          </span>
         </div>
         <div className="divide-y divide-base-border max-h-96 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="p-4 text-center text-sm text-text-subtle">
-              Tidak ada transaksi
+            <div className="p-8 text-center">
+              <div className="w-10 h-10 rounded-full bg-base-hover mx-auto mb-3 flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-text-subtle" />
+              </div>
+              <p className="text-sm text-text-subtle">
+                Tidak ada transaksi
+              </p>
             </div>
           ) : (
             filtered.map((tx) => (
@@ -291,6 +434,6 @@ export function FinanceView() {
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
