@@ -45,6 +45,7 @@ import {
   Loader2,
   FolderKanban,
   Download,
+  FileUp,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -57,12 +58,16 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { DeleteConfirmDialog } from "@/components/project/DeleteConfirmDialog";
+import { ImportDialog } from "@/components/import/ImportDialog";
 import {
   useProjects,
   useCreateProject,
   useUpdateProject,
   useDeleteProject,
 } from "@/hooks/useProjects";
+import { useQueryClient } from "@tanstack/react-query";
+import { ProjectCardSkeleton } from "@/components/ui/skeleton-loader";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ProjectsViewProps {
   onSelectProject: (id: string) => void;
@@ -81,6 +86,8 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const queryClient = useQueryClient();
 
   // Debounce search
   const searchTimer = useRef<NodeJS.Timeout | null>(null);
@@ -432,14 +439,18 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="h-8 w-40 bg-base-card rounded animate-pulse" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
-              key={i}
-              className="h-48 bg-base-card rounded-lg border border-base-border animate-pulse"
-            />
+      <div className="space-y-4 max-w-6xl">
+        <div>
+          <Skeleton className="h-6 w-28 mb-1" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-8 w-64 rounded-md" />
+          <Skeleton className="h-8 w-36 rounded-md" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <ProjectCardSkeleton key={i} />
           ))}
         </div>
       </div>
@@ -457,6 +468,15 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs gap-1.5 text-text-muted hover:text-text-main"
+            onClick={() => setShowImportDialog(true)}
+          >
+            <FileUp className="w-3.5 h-3.5" />
+            Import
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -761,6 +781,15 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
         title="Hapus Project"
         description="Yakin ingin menghapus project ini? Semua data termasuk tasks, transaksi, dan komentar akan ikut terhapus. Tindakan ini tidak dapat dibatalkan."
         onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+      />
+
+      {/* Import Dialog */}
+      <ImportDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onImportComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
+        }}
       />
     </div>
   );

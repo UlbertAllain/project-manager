@@ -220,13 +220,13 @@ export function SettingsView({ onNavigate }: SettingsViewProps) {
                   >
                     Nama
                   </Label>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <Input
                       id="edit-name"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       placeholder="Masukkan nama"
-                      className="max-w-xs bg-base-bg border-base-border text-text-main placeholder:text-text-subtle text-sm h-9"
+                      className="bg-base-bg border-base-border text-text-main placeholder:text-text-subtle text-sm h-9 w-full sm:w-auto sm:max-w-xs"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleSaveProfile();
                       }}

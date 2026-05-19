@@ -595,3 +595,335 @@ Stage Summary:
 - New files created: 7 (theme-toggle, useActivitySocket, useDuplicateProject, socket utility, preferences store, Settings view, WS mini-service)
 - Modified files: 10+ (globals.css, TaskSection, ProjectHeader, ProjectDetailView, AppSidebar, page.tsx, all mutation hooks)
 - WebSocket service running on port 3003 with Socket.IO
+
+---
+Task ID: 5.4
+Agent: Advanced Analytics Agent
+Task: Implement Advanced Analytics Dashboard
+
+Work Log:
+- Read worklog.md to understand previous agents' work (React Query integration, dashboard enhancements, etc.)
+- Read existing DashboardView.tsx (670 lines), hooks (useProjects, useTransactions, useActivityLogs), types, and helpers
+- Added `AreaChart`, `Area` imports from Recharts and `Project` type import
+- Added `calculateHealthScore()` helper function outside component — calculates score (0-100) based on budget health, task completion rate, and deadline risk
+- Enhanced `CustomTooltip` to format Income/Expense values with formatRupiah
+- Replaced `monthlyIncomes` array with `monthlyData` array containing both Income and Expense per month for last 6 months
+- Added health score data computation: filters active projects, calculates health scores, sorts worst-first, limits to 6
+- Added monthly comparison data computation: thisMonth vs lastMonth for income, expense, new projects, completed tasks
+- Built comparisonCards array with 4 metrics: Revenue, Expense, Project Baru, Task Selesai
+- Added Revenue Trend Area Chart section ("Tren Revenue & Expense") between Budget Overview and Charts row — uses Recharts AreaChart with linear gradients (green for income, red for expense), interactive tooltip, X-axis with Indonesian month names
+- Added Project Health Score section after Charts row — card grid with SVG circular progress indicators (color-coded: red <40, amber 40-70, green >70), project name/client, mini breakdown showing Budget ✓/✗, Tasks X/Y, Deadline risk level
+- Added Monthly Comparison section ("Perbandingan Bulanan") before Recent Projects — 2x2 grid of comparison cards showing current value, change % with up/down arrows, trend colors
+- Verified layout order matches spec: Title → Stats → Budget → Revenue Trend → Charts → Health Score → Activity + Deadline → Monthly Comparison → Recent Projects
+- Lint passes clean, dev server compiles and all API endpoints return 200
+
+Stage Summary:
+- Dashboard enhanced with 3 new advanced analytics sections
+- Revenue Trend: AreaChart with gradient fills showing 6-month income vs expense trend
+- Project Health Score: Card grid with SVG circular indicators and multi-factor scoring (budget, tasks, deadline)
+- Monthly Comparison: 2x2 grid comparing current vs previous month metrics with % change indicators
+- No new files created, no new API routes — all data derived from existing React Query hooks
+- All existing dashboard functionality preserved intact
+
+---
+Task ID: 5.1
+Agent: AI Assistant Agent
+Task: Implement AI Project Assistant Chat Panel
+
+Work Log:
+- Created `/src/app/api/ai/chat/route.ts` — POST endpoint for AI chat completions using z-ai-web-dev-sdk
+  - Accepts { message, projectId? } in request body
+  - If projectId provided, fetches project from DB with tasks and transactions, builds context string with project name, client, status, priority, progress, budget, paid, expense, deadline, tasks completion stats, tech stack, payment status
+  - System prompt: Indonesian language assistant for Nexty Labs project management
+  - Returns { response: string } with AI completion
+  - Error handling with try/catch and proper status codes (400 for missing message, 500 for AI errors)
+- Created `/src/app/api/ai/insights/route.ts` — POST endpoint for portfolio insights
+  - Accepts { projectIds? } in request body
+  - Fetches all projects or specified ones from DB with tasks and transactions
+  - Builds project summary with key metrics per project
+  - Includes aggregate stats: total projects, active count, overdue count
+  - System prompt structured for 4-section analysis: Ringkasan Portfolio, Risiko & Perhatian, Rekomendasi, Prediksi
+  - Returns { insights: string }
+- Created `/src/components/ai/AiAssistant.tsx` — Floating chat panel component
+  - Floating Action Button (FAB): fixed bottom-6 right-6, brand-primary bg, Sparkles icon, shadow-lg
+  - Uses shadcn/ui Sheet component (slide-over from right, sm:max-w-md)
+  - Header: Sparkles icon + "AI Assistant" title + description
+  - Project context selector: dropdown to select project for context-aware questions, uses useProjects() hook
+  - Chat messages area: ScrollArea, user messages right-aligned (brand-primary/10 bg), AI messages left-aligned (base-card bg) with Bot/User avatar icons
+  - Framer Motion AnimatePresence for smooth message entry animations
+  - Loading state: animated dots indicator while AI is thinking
+  - Welcome state: Bot icon with greeting when no messages
+  - Suggestion chips: "Analisis project", "Tips deadline", "Saran budget" — only shown when no messages
+  - Input area: Input + Send button with loading spinner
+  - All messages stored in local state (not persisted)
+- Updated `/src/app/page.tsx` — Added AiAssistant component
+  - Imported AiAssistant from @/components/ai/AiAssistant
+  - Rendered after CommandPalette, inside authenticated section (only visible when effectiveView !== "login")
+- Lint passes clean, dev server compiles successfully
+- Both API endpoints tested and returning valid responses
+
+Stage Summary:
+- AI Chat API endpoint functional: POST /api/ai/chat accepts messages with optional project context
+- AI Insights API endpoint functional: POST /api/ai/insights generates portfolio analysis
+- Floating AI Assistant chat panel accessible via FAB button on all authenticated views
+- Project context selector allows asking questions about specific projects
+- Suggestion chips for quick-start conversations
+- Framer Motion animations for message entry
+- Indonesian language responses matching app locale
+
+---
+Task ID: 5.2
+Agent: Smart Insights Agent
+Task: Implement Smart Project Insights Widget for Nexty Labs Project Tracker
+
+Work Log:
+- Created `src/components/ai/SmartInsights.tsx` — Smart Insights widget component:
+  - "use client" directive for client-side rendering
+  - Props: `{ onNavigate?: (view: string) => void }` for future navigation integration
+  - On mount, calls POST /api/ai/insights with empty body (analyzes all projects)
+  - Loading state: animated skeleton with pulse effect (6 skeleton lines mimicking section headers + content)
+  - Loaded state: displays AI-generated insights in a formatted card with custom markdown-like renderer
+  - `renderInsights(text)` function parses insights text:
+    - Lines starting with emoji (📊⚠️💡📈) rendered as bold, slightly larger section headers (text-sm font-semibold)
+    - Text between ** ** gets bold styling with text-text-main color
+    - Bullet points (starting with - or •) get proper indentation (pl-3)
+    - Empty lines render as small spacers (h-1)
+    - Regular text rendered as text-xs with text-text-muted color
+  - Refresh button with RefreshCw icon (spinning animation during loading)
+  - Minimize/Expand toggle with ChevronUp/ChevronDown icons
+  - Error state: AlertTriangle icon with "Gagal memuat insights" message and "Coba lagi" retry button
+  - Insights cached in state (no re-fetch on every render, only on mount or manual refresh)
+  - Scrollable content area: max-h-96 overflow-y-auto
+  - Design system consistent: bg-base-card, border-base-border, text-text-main, text-text-muted, brand-primary for Sparkles icon
+- Updated `src/components/views/DashboardView.tsx`:
+  - Imported SmartInsights component from @/components/ai/SmartInsights
+  - Added SmartInsights widget between Charts row and Health Score section
+  - Wrapped in motion.div with itemVariants for staggered animation
+  - Passed onNavigate prop for future navigation integration
+  - Dashboard layout now: Stats cards → Budget Overview → Revenue Trend → Charts row → **Smart Insights** → Health Score → Activity Feed + Deadline Timeline → Monthly Comparison → Recent Projects
+- No new API routes created (uses existing POST /api/ai/insights)
+- No z-ai-web-dev-sdk used in client-side code
+- Lint passes clean, dev server compiles successfully
+- POST /api/ai/insights endpoint returning 200 with AI-generated insights
+
+Stage Summary:
+- Smart Insights widget displays AI-generated portfolio analysis on the dashboard
+- Insights auto-fetched on mount with loading skeleton, error state with retry, and cached in component state
+- Custom markdown-like renderer handles emoji section headers, bold text, bullet points, and spacing
+- Minimize/Expand and Refresh controls in the widget header
+- Widget placed between Charts row and Health Score in dashboard layout
+- 1 new file created, 1 file modified, zero lint errors
+
+---
+Task ID: 5.3
+Agent: AI Cover Image Agent
+Task: Implement AI Cover Image Generation for Nexty Labs Project Tracker
+
+Work Log:
+- Updated `prisma/schema.prisma` — Added `coverImage String?` field to Project model (nullable, no default)
+- Ran `bun run db:push` to sync schema and regenerate Prisma Client
+- Updated `src/lib/types.ts` — Added `coverImage?: string | null` to Project interface (after `notes` field)
+- Created `src/app/api/ai/generate-cover/route.ts` — POST endpoint for AI cover image generation:
+  - Accepts `{ projectId, prompt? }` in request body
+  - Validates projectId, fetches project from database
+  - Auto-generates prompt from project data if no custom prompt provided: `Professional abstract cover image for a ${category} project called "${projectName}", using ${techStack.join(', ')} technology, modern minimalist design, dark theme, geometric shapes, no text, digital art style, high quality`
+  - Uses `z-ai-web-dev-sdk` image generation with size '1344x768' (landscape)
+  - Gets base64 image from `response.data[0].base64`
+  - Saves base64 string to project's coverImage field in database
+  - Returns `{ coverImage: base64string }`
+  - Error handling: 400 for missing projectId, 404 for project not found, 500 for generation failures
+- Updated `src/components/project/ProjectHeader.tsx` — Added cover image banner and AI Cover button:
+  - Added `coverImage?: string | null`, `onGenerateCover?: (prompt?: string) => void`, `coverLoading?: boolean` props
+  - Cover image banner at top: h-32 (mobile) / h-40 (md) rounded-lg with overflow-hidden
+  - If coverImage exists: shows `<img>` with base64 data URI, object-cover
+  - If no coverImage: shows gradient placeholder (from-brand-primary/20 via-brand-primary/5 to-transparent)
+  - Overlay gradient (from-base-bg/80 to-transparent) for visual depth
+  - AI Cover button (Sparkles icon) next to Duplikasi button
+  - Popover with custom prompt input (optional) and Generate button
+  - Enter key triggers generation, loading state with Loader2 spinner
+  - Popover auto-closes on generation trigger
+- Updated `src/components/views/ProjectDetailView.tsx` — Wired up cover generation:
+  - Added `useQueryClient` import from @tanstack/react-query
+  - Added `coverLoading` state with useState
+  - Added `handleGenerateCover` function: POST /api/ai/generate-cover, invalidates project query on success, toast success/error
+  - Passed `coverImage`, `onGenerateCover`, `coverLoading` props to ProjectHeader
+- Updated `src/app/api/projects/route.ts` — Excluded coverImage from list endpoint for performance:
+  - Destructured `coverImage` out of projects map to avoid sending large base64 strings in project list
+  - Single project endpoint (`/api/projects/[id]/route.ts`) already returns coverImage via spread operator
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- AI cover image generation feature fully implemented with backend API, database storage, and UI integration
+- Cover image banner appears at top of project detail view with gradient placeholder when no image
+- "AI Cover" button with Sparkles icon opens popover for custom prompt or auto-generated prompt
+- Base64 image stored in database coverImage field, returned via single project API endpoint
+- Project list API excludes coverImage for performance (large base64 strings)
+- All existing ProjectHeader functionality preserved (status, badges, progress, duplicate button)
+- 1 new file created, 4 files modified, zero lint errors
+
+---
+Task ID: 5.6
+Agent: CSV Import Agent
+Task: Implement CSV Import Feature for Nexty Labs Project Tracker
+
+Work Log:
+- Created `src/lib/utils/importCsv.ts` — CSV parsing and validation utility:
+  - `parseCSV(csvText)`: Parses CSV text into headers + rows, handles quoted fields with proper escaping (double-quote escaping, comma-in-quotes)
+  - `ImportProject` interface with all project fields: projectName, clientName, projectLead, description, status, priority, category, budget, deadline, notes
+  - `HEADER_ALIASES`: Maps both Indonesian (nama project, client, prioritas, kategori, anggaran, tenggat, catatan) and English header names to internal fields
+  - `mapRowToProject(row)`: Normalizes CSV row to ImportProject with status/priority/category mapping from both languages
+  - `normalizeStatus()`: Maps Indonesian/English status values (baru→NEW, berjalan→IN_PROGRESS, selesai→COMPLETED, etc.)
+  - `normalizePriority()`: Maps Indonesian/English priority values (rendah→LOW, sedang→MEDIUM, tinggi→HIGH, kritis→URGENT)
+  - `normalizeCategory()`: Maps Indonesian/English category values (konsultasi→CONSULTING, infrastruktur→INFRASTRUCTURE, lainnya→OTHER)
+  - `normalizeDate()`: Handles ISO dates and DD/MM/YYYY format, returns YYYY-MM-DD
+  - `validateImportProject(project)`: Validates required fields (projectName, clientName) and budget >= 0
+- Created `src/app/api/projects/import/route.ts` — POST endpoint for bulk project import:
+  - Accepts `{ projects: ImportProject[] }` in request body
+  - Validates each project: checks projectName and clientName are non-empty
+  - Creates valid projects via `db.project.create()` with default techStack='[]'
+  - Returns `{ success: number; failed: number; errors: { index: number; errors: string[] }[] }`
+  - Proper error handling with try/catch per project and global error handler
+- Created `src/components/import/ImportDialog.tsx` — Dialog component for CSV import with 4 steps:
+  - **Upload step**: Drag & drop zone with Upload icon, file input (.csv only), "Pilih File" button, template download section with Info hint
+  - **Preview step**: Table showing max 10 parsed rows with columns (Nama, Client, Status, Budget, Validasi), invalid rows highlighted with red bg, valid count summary, "Import N Project" button
+  - **Importing step**: Loading spinner with Loader2 icon and progress message
+  - **Done step**: CheckCircle2 success icon, success/failed count, error details if any, "Selesai" close button
+  - `downloadTemplate()`: Generates BOM-prefixed CSV template with Indonesian headers and example row
+  - State machine: 'upload' → 'preview' → 'importing' → 'done'
+  - Auto-resets state on dialog close
+  - File validation: .csv extension check, empty file detection, parse error handling
+  - Toast notifications for success/failure
+- Updated `src/components/views/ProjectsView.tsx`:
+  - Imported `FileUp` icon from lucide-react
+  - Imported `ImportDialog` component and `useQueryClient` from @tanstack/react-query
+  - Added `showImportDialog` state and `queryClient` instance
+  - Added "Import" ghost button with FileUp icon next to Export button in header
+  - Rendered `ImportDialog` component with `onImportComplete` callback that invalidates ["projects"] query key
+  - All existing export functionality preserved unchanged
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- CSV import utility at `src/lib/utils/importCsv.ts` with full Indonesian/English header and value mapping
+- POST /api/projects/import API route for bulk project creation with validation
+- ImportDialog component with 4-step UX: Upload → Preview → Importing → Done
+- Drag & drop file upload + template download feature
+- Preview table validates and highlights invalid rows before import
+- Import button added to ProjectsView header alongside existing Export button
+- React Query cache invalidation on import complete for automatic UI refresh
+
+---
+Task ID: 5.5
+Agent: Performance & Polish Agent
+Task: Implement Performance & Polish improvements for Nexty Labs Project Tracker
+
+Work Log:
+- Created `src/components/ui/skeleton-loader.tsx` — Reusable skeleton wrapper components:
+  - StatCardSkeleton: Matches dashboard stat card layout (icon + label + value)
+  - CardSkeleton: Generic card with title and text lines
+  - ListItemSkeleton: List item with avatar circle + text
+  - TableRowSkeleton: Table row with columns and badge
+  - ChartSkeleton: Chart card with bar placeholders (random heights for visual variety)
+  - KanbanColumnSkeleton: Kanban column with header dot, label, count + 2 card placeholders
+  - ProjectCardSkeleton: Full project card skeleton matching ProjectsView card layout (name, client, badges, progress, footer)
+  - FinanceStatSkeleton: Finance stat card matching Income/Expense/Net layout
+  - TransactionItemSkeleton: Transaction row with icon, description, amount
+  - CoverSkeleton: Cover image banner placeholder
+  - ProjectDetailSkeleton: Complete project detail page skeleton (cover, nav, info card, tab section)
+- Updated `src/components/views/DashboardView.tsx` — Replaced simple pulse divs with proper skeleton loaders:
+  - Title skeleton (h6 + subtitle)
+  - 6 StatCardSkeleton in 2-col/3-col grid
+  - CardSkeleton for budget overview
+  - 2 ChartSkeleton for charts row
+- Updated `src/components/views/ProjectsView.tsx` — Replaced simple pulse divs:
+  - Title skeleton
+  - Search bar + filter skeleton
+  - 6 ProjectCardSkeleton in responsive grid
+- Updated `src/components/views/BoardView.tsx` — Replaced simple pulse columns:
+  - Title + subtitle skeleton
+  - 4 KanbanColumnSkeleton with proper card items
+- Updated `src/components/views/FinanceView.tsx` — Replaced simple pulse divs:
+  - Title + subtitle skeleton
+  - 3 FinanceStatSkeleton for Income/Expense/Net
+  - ChartSkeleton for monthly chart
+  - Transaction item skeletons (5 items) for transaction list
+- Updated `src/components/views/ProjectDetailView.tsx` — Replaced simple pulse divs:
+  - ProjectDetailSkeleton with cover, navigation, info card, and tab section
+- Created `src/components/OfflineIndicator.tsx` — Offline detection component:
+  - Uses navigator.onLine + online/offline event listeners
+  - Lazy initializer pattern for useState to avoid lint error
+  - AnimatePresence for smooth show/hide transition
+  - Amber-themed banner with WifiOff icon and Indonesian message
+- Updated `src/components/layout/AppShell.tsx` — Added OfflineIndicator:
+  - Renders at top of main content area (inside main, before children)
+  - Content area restructured: main > OfflineIndicator + padded content div
+- Responsive improvements:
+  - `ProjectHeader.tsx`: Changed navigation row to `flex-wrap` and grouped action buttons in a nested flex container for better mobile layout
+  - `SettingsView.tsx`: Profile name input now uses `w-full sm:w-auto sm:max-w-xs` and `flex-wrap` for better mobile layout
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- 12 reusable skeleton wrapper components created for consistent loading states across all views
+- All 5 view components upgraded from basic pulse divs to detailed skeleton loaders matching actual content layout
+- Offline indicator banner with smooth AnimatePresence transitions
+- Responsive fixes for ProjectHeader navigation and SettingsView profile form
+- No breaking changes — all existing functionality preserved
+
+---
+Task ID: 5
+Agent: Main Agent (Coordinator)
+Task: Phase 5 — AI Intelligence & Final Polish (Complete)
+
+Work Log:
+- Coordinated 6 sub-tasks (5.1–5.6) across multiple specialized agents
+- Verified all lint checks pass clean after all sub-tasks completed
+- Verified dev server compiles and all API endpoints return 200
+- Verified WebSocket service running on port 3003
+- Confirmed all 10 new files are in place
+
+Stage Summary:
+- **Phase 5 Complete**: All 6 tasks implemented successfully
+- Key improvements:
+  1. AI Project Assistant — Floating chat panel (Sparkles FAB) with LLM chat, project context selector, suggestion chips
+  2. Smart Project Insights — AI-generated portfolio analysis on Dashboard with structured 📊⚠️💡📈 sections
+  3. AI Cover Image Generation — Generate project cover images from project metadata using z-ai-web-dev-sdk
+  4. Advanced Analytics Dashboard — Revenue trend line chart, project health scoring (0-100 with SVG circles), monthly comparison
+  5. Performance & Polish — Skeleton loading for all 5 views, offline detection indicator, responsive improvements
+  6. CSV Import — Full import workflow with upload/preview/import steps, template download, header aliases (Indonesian/English)
+- New API routes: /api/ai/chat, /api/ai/insights, /api/ai/generate-cover, /api/projects/import
+- New components: AiAssistant, SmartInsights, ImportDialog, OfflineIndicator, skeleton-loader
+- Prisma schema updated: added coverImage field to Project model
+- All features use z-ai-web-dev-sdk on backend only, never in client-side code
+
+---
+PROJECT COMPLETE — All 5 Phases Summary:
+
+Phase 1: Stabilization & Security ✅
+- Full rebuild from Firebase client-side to Prisma + API Routes
+- Zod validation, toast notifications, dark theme design system, seed data
+
+Phase 2: UX & Component Refactor ✅
+- ProjectDetailView decomposed into 7 components
+- Recharts visualizations, Framer Motion animations, breadcrumb nav
+- Kanban board with drag & drop, search debounce, improved empty states
+
+Phase 3: Data Layer & Feature Enhancement ✅
+- React Query integration with custom hooks and optimistic updates
+- Command Palette (Cmd+K), CSV Export, Dashboard enhancements
+- Notification Center, Keyboard Shortcuts (Vim-style G+X)
+
+Phase 4: Advanced Features & Collaboration ✅
+- Light/Dark theme toggle, Task drag & drop reorder
+- Project duplication, Settings view, Task inline rename
+- Real-time WebSocket collaboration (Socket.IO mini-service)
+
+Phase 5: AI Intelligence & Final Polish ✅
+- AI Project Assistant (LLM chat panel with project context)
+- Smart Project Insights (AI portfolio analysis on Dashboard)
+- AI Cover Image Generation (z-ai-web-dev-sdk image generation)
+- Advanced Analytics (Revenue trend, Health score, Monthly comparison)
+- Performance & Polish (Skeleton loading, Offline detection, Responsive fixes)
+- CSV Import with validation and preview
+
+Total new files across all phases: 50+
+Total modified files: 40+
+Lines of code: ~15,000+

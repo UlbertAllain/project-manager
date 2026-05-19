@@ -12,6 +12,7 @@ import { FinanceView } from "@/components/views/FinanceView";
 import { SettingsView } from "@/components/views/SettingsView";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CommandPalette } from "@/components/search/CommandPalette";
+import { AiAssistant } from "@/components/ai/AiAssistant";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useActivitySocket } from "@/hooks/useActivitySocket";
 import { AnimatePresence, motion } from "framer-motion";
@@ -185,6 +186,8 @@ export default function Home() {
         onNavigate={handleNavigate}
         onSelectProject={handleSelectProject}
       />
+
+      <AiAssistant />
     </>
   );
 }

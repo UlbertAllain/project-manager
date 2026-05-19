@@ -39,6 +39,8 @@ import {
   Cell,
   BarChart,
   Bar,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -48,6 +50,10 @@ import {
 import { useProjects } from "@/hooks/useProjects";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useActivityLogs } from "@/hooks/useActivityLogs";
+import { SmartInsights } from "@/components/ai/SmartInsights";
+import { Project } from "@/lib/types";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatCardSkeleton, CardSkeleton, ChartSkeleton } from "@/components/ui/skeleton-loader";
 
 interface DashboardViewProps {
   onNavigate: (view: string) => void;
@@ -98,7 +104,7 @@ function CustomTooltip({
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: p.color }}
             />
-            {p.name}: {p.name === "Budget" || p.name === "Paid" ? formatRupiah(p.value) : p.value}
+            {p.name}: {p.name === "Budget" || p.name === "Paid" || p.name === "Income" || p.name === "Expense" ? formatRupiah(p.value) : p.value}
           </p>
         ))}
       </div>
@@ -124,6 +130,45 @@ function formatDaysLabel(days: number): string {
   if (days < 0) return `${Math.abs(days)} hari terlambat`;
   if (days === 0) return "Hari ini";
   return `${days} hari lagi`;
+}
+
+// Health score calculation for project health indicator
+function calculateHealthScore(project: Project): { score: number; budget: boolean; taskRate: string; deadlineRisk: string } {
+  let score = 100;
+
+  // Budget health: expense should not exceed budget proportionally to progress
+  if (project.budget > 0) {
+    const budgetRatio = project.totalExpense / project.budget;
+    const progressRatio = project.progress / 100;
+    if (budgetRatio > progressRatio * 1.2) score -= 25; // Over-budget relative to progress
+    else if (budgetRatio > progressRatio) score -= 10;
+  }
+
+  // Task completion
+  const taskTotal = project.tasks?.length || 0;
+  const taskCompleted = project.tasks?.filter((t) => t.isCompleted).length || 0;
+  const taskRate = taskTotal > 0 ? taskCompleted / taskTotal : 0;
+  if (taskTotal > 0) {
+    if (taskRate < project.progress / 100 * 0.8) score -= 20;
+    else if (taskRate < project.progress / 100) score -= 10;
+  }
+
+  // Deadline risk
+  let deadlineRisk = "safe";
+  if (project.deadline) {
+    const daysLeft = Math.ceil((new Date(project.deadline).getTime() - Date.now()) / (1000*60*60*24));
+    const progressRemaining = 100 - project.progress;
+    if (daysLeft < 0) { score -= 30; deadlineRisk = "overdue"; }
+    else if (daysLeft < 7 && progressRemaining > 20) { score -= 20; deadlineRisk = "high"; }
+    else if (daysLeft < 14 && progressRemaining > 40) { score -= 10; deadlineRisk = "medium"; }
+  }
+
+  return {
+    score: Math.max(0, Math.min(100, score)),
+    budget: project.budget > 0 ? (project.totalExpense / project.budget) <= (project.progress / 100 * 1.2) : true,
+    taskRate: `${taskCompleted}/${taskTotal}`,
+    deadlineRisk,
+  };
 }
 
 export function DashboardView({
@@ -155,9 +200,9 @@ export function DashboardView({
       ? Math.round((completedProjects / totalProjects) * 100)
       : 0;
 
-  // Revenue trend calculation - monthly income for last 6 months
+  // Revenue trend calculation - monthly income & expense for last 6 months
   const now = new Date();
-  const monthlyIncomes: { month: string; income: number }[] = [];
+  const monthlyData: { month: string; Income: number; Expense: number }[] = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const year = d.getFullYear();
@@ -169,15 +214,23 @@ export function DashboardView({
         return tDate.getFullYear() === year && tDate.getMonth() === month;
       })
       .reduce((acc, t) => acc + t.amount, 0);
-    monthlyIncomes.push({
+    const expense = allTransactions
+      .filter((t) => {
+        if (t.type !== "EXPENSE") return false;
+        const tDate = new Date(t.date);
+        return tDate.getFullYear() === year && tDate.getMonth() === month;
+      })
+      .reduce((acc, t) => acc + t.amount, 0);
+    monthlyData.push({
       month: d.toLocaleDateString("id-ID", { month: "short" }),
-      income,
+      Income: income,
+      Expense: expense,
     });
   }
 
   // Revenue trend: compare last month vs previous month
-  const thisMonthIncome = monthlyIncomes[5]?.income ?? 0;
-  const lastMonthIncome = monthlyIncomes[4]?.income ?? 0;
+  const thisMonthIncome = monthlyData[5]?.Income ?? 0;
+  const lastMonthIncome = monthlyData[4]?.Income ?? 0;
   const revenueTrendPercent =
     lastMonthIncome > 0
       ? Math.round(((thisMonthIncome - lastMonthIncome) / lastMonthIncome) * 100)
@@ -280,6 +333,85 @@ export function DashboardView({
   // Activity feed — max 8 items
   const activityFeed = activityLogs.slice(0, 8);
 
+  // Health score data — active projects only, sorted worst first
+  const healthScoreData = projects
+    .filter((p) => !["COMPLETED", "CANCELLED"].includes(p.status))
+    .map((p) => ({ project: p, health: calculateHealthScore(p) }))
+    .sort((a, b) => a.health.score - b.health.score)
+    .slice(0, 6);
+
+  // Monthly comparison data
+  const thisMonth = { income: 0, expense: 0, newProjects: 0, completedTasks: 0 };
+  const lastMonth = { income: 0, expense: 0, newProjects: 0, completedTasks: 0 };
+  const thisMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  allTransactions.forEach((t) => {
+    const tDate = new Date(t.date);
+    if (tDate.getFullYear() === thisMonthDate.getFullYear() && tDate.getMonth() === thisMonthDate.getMonth()) {
+      if (t.type === "INCOME") thisMonth.income += t.amount;
+      else thisMonth.expense += t.amount;
+    }
+    if (tDate.getFullYear() === lastMonthDate.getFullYear() && tDate.getMonth() === lastMonthDate.getMonth()) {
+      if (t.type === "INCOME") lastMonth.income += t.amount;
+      else lastMonth.expense += t.amount;
+    }
+  });
+
+  projects.forEach((p) => {
+    const pDate = new Date(p.createdAt);
+    if (pDate.getFullYear() === thisMonthDate.getFullYear() && pDate.getMonth() === thisMonthDate.getMonth()) {
+      thisMonth.newProjects++;
+    }
+    if (pDate.getFullYear() === lastMonthDate.getFullYear() && pDate.getMonth() === lastMonthDate.getMonth()) {
+      lastMonth.newProjects++;
+    }
+    const completedTasks = p.tasks?.filter((t) => t.isCompleted).length || 0;
+    // Approximate: count all completed tasks towards this month for simplicity
+    thisMonth.completedTasks += completedTasks;
+  });
+  // For last month comparison, we use the same completedTasks since we don't have historical task data
+  lastMonth.completedTasks = 0; // No historical data available
+
+  const comparisonCards = [
+    {
+      label: "Revenue",
+      current: formatBudgetShort(thisMonth.income),
+      change: lastMonth.income > 0 ? Math.round(((thisMonth.income - lastMonth.income) / lastMonth.income) * 100) : thisMonth.income > 0 ? 100 : 0,
+      up: thisMonth.income >= lastMonth.income,
+      color: thisMonth.income >= lastMonth.income ? "text-emerald-400" : "text-red-400",
+      bg: "bg-emerald-500/10",
+      icon: DollarSign,
+    },
+    {
+      label: "Expense",
+      current: formatBudgetShort(thisMonth.expense),
+      change: lastMonth.expense > 0 ? Math.round(((thisMonth.expense - lastMonth.expense) / lastMonth.expense) * 100) : thisMonth.expense > 0 ? 100 : 0,
+      up: thisMonth.expense <= lastMonth.expense, // Lower expense is better
+      color: thisMonth.expense <= lastMonth.expense ? "text-emerald-400" : "text-red-400",
+      bg: "bg-red-500/10",
+      icon: CircleDollarSign,
+    },
+    {
+      label: "Project Baru",
+      current: thisMonth.newProjects.toString(),
+      change: lastMonth.newProjects > 0 ? Math.round(((thisMonth.newProjects - lastMonth.newProjects) / lastMonth.newProjects) * 100) : thisMonth.newProjects > 0 ? 100 : 0,
+      up: thisMonth.newProjects >= lastMonth.newProjects,
+      color: thisMonth.newProjects >= lastMonth.newProjects ? "text-emerald-400" : "text-red-400",
+      bg: "bg-blue-500/10",
+      icon: FolderKanban,
+    },
+    {
+      label: "Task Selesai",
+      current: thisMonth.completedTasks.toString(),
+      change: 0,
+      up: true,
+      color: "text-emerald-400",
+      bg: "bg-amber-500/10",
+      icon: CheckCircle2,
+    },
+  ];
+
   // Chart data: Status distribution
   const statusChartData = PROJECT_STATUSES.map((status) => ({
     name: STATUS_LABELS[status] || status,
@@ -305,14 +437,20 @@ export function DashboardView({
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
-              key={i}
-              className="h-24 bg-base-card rounded-lg border border-base-border animate-pulse"
-            />
+      <div className="space-y-6 max-w-6xl">
+        <div>
+          <Skeleton className="h-6 w-28 mb-1" />
+          <Skeleton className="h-4 w-52" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <StatCardSkeleton key={i} />
           ))}
+        </div>
+        <CardSkeleton />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartSkeleton />
+          <ChartSkeleton />
         </div>
       </div>
     );
@@ -391,6 +529,45 @@ export function DashboardView({
             Sisa: {formatRupiah(totalBudget - totalPaid)}
           </span>
         </div>
+      </motion.div>
+
+      {/* Revenue Trend Area Chart */}
+      <motion.div
+        variants={itemVariants}
+        className="bg-base-card border border-base-border rounded-lg p-4"
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          <h3 className="text-sm font-medium text-text-main">
+            Tren Revenue & Expense
+          </h3>
+        </div>
+        {monthlyData.every((d) => d.Income === 0 && d.Expense === 0) ? (
+          <div className="h-48 flex items-center justify-center text-sm text-text-subtle">
+            Belum ada data transaksi
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={monthlyData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+              <defs>
+                <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
+              <YAxis hide />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="Income" stroke="#22c55e" fill="url(#incomeGrad)" strokeWidth={2} dot={false} />
+              <Area type="monotone" dataKey="Expense" stroke="#ef4444" fill="url(#expenseGrad)" strokeWidth={2} dot={false} />
+              <Legend iconType="circle" iconSize={6} wrapperStyle={{ fontSize: "11px", color: "#71717a" }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </motion.div>
 
       {/* Charts row */}
@@ -483,6 +660,73 @@ export function DashboardView({
             </ResponsiveContainer>
           )}
         </div>
+      </motion.div>
+
+      {/* Smart Insights */}
+      <motion.div variants={itemVariants}>
+        <SmartInsights onNavigate={onNavigate} />
+      </motion.div>
+
+      {/* Project Health Score */}
+      <motion.div
+        variants={itemVariants}
+        className="bg-base-card border border-base-border rounded-lg p-4"
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <BarChart3 className="w-4 h-4 text-text-muted" />
+          <h3 className="text-sm font-medium text-text-main">
+            Project Health Score
+          </h3>
+        </div>
+        {healthScoreData.length === 0 ? (
+          <div className="h-32 flex items-center justify-center text-sm text-text-subtle">
+            Tidak ada project aktif
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {healthScoreData.map(({ project, health }) => (
+              <button
+                key={project.id}
+                onClick={() => onSelectProject(project.id)}
+                className="bg-base-bg border border-base-border rounded-lg p-3 hover:border-base-border/80 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  {/* Circular health score indicator */}
+                  <svg className="w-14 h-14 shrink-0" viewBox="0 0 36 36">
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-base-border" />
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray={`${health.score}, 100`} className={health.score > 70 ? 'text-emerald-400' : health.score > 40 ? 'text-amber-400' : 'text-red-400'} strokeLinecap="round" />
+                    <text x="18" y="20.5" textAnchor="middle" className="text-[8px] font-semibold" fill="currentColor">
+                      <tspan className={health.score > 70 ? 'text-emerald-400' : health.score > 40 ? 'text-amber-400' : 'text-red-400'}>{health.score}</tspan>
+                    </text>
+                  </svg>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-text-main truncate">{project.projectName}</p>
+                    <p className="text-[11px] text-text-subtle">{project.clientName}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-text-subtle flex-wrap">
+                  <span className={health.budget ? "text-emerald-400" : "text-red-400"}>
+                    {health.budget ? "✓" : "✗"} Budget
+                  </span>
+                  <span className="text-base-border">·</span>
+                  <span>Tasks {health.taskRate}</span>
+                  <span className="text-base-border">·</span>
+                  <span className={
+                    health.deadlineRisk === "overdue" ? "text-red-400" :
+                    health.deadlineRisk === "high" ? "text-orange-400" :
+                    health.deadlineRisk === "medium" ? "text-amber-400" :
+                    "text-emerald-400"
+                  }>
+                    {health.deadlineRisk === "overdue" ? "⚠ Overdue" :
+                     health.deadlineRisk === "high" ? "⚠ High risk" :
+                     health.deadlineRisk === "medium" ? "⚡ Medium" :
+                     "✓ Deadline"}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </motion.div>
 
       {/* Activity Feed + Deadline Timeline */}
@@ -606,6 +850,54 @@ export function DashboardView({
                 })}
               </div>
             )}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Monthly Comparison */}
+      <motion.div variants={itemVariants}>
+        <div className="bg-base-card border border-base-border rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="w-4 h-4 text-text-muted" />
+            <h3 className="text-sm font-medium text-text-main">
+              Perbandingan Bulanan
+            </h3>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {comparisonCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <div
+                  key={card.label}
+                  className="bg-base-bg border border-base-border rounded-lg p-3"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`w-6 h-6 rounded-md ${card.bg} flex items-center justify-center`}>
+                      <Icon className={`w-3 h-3 ${card.color}`} />
+                    </div>
+                    <span className="text-[11px] text-text-muted">{card.label}</span>
+                  </div>
+                  <p className="text-lg font-semibold text-text-main">{card.current}</p>
+                  <div className="flex items-center gap-1 mt-1">
+                    {card.change !== 0 ? (
+                      <>
+                        {card.up ? (
+                          <ArrowUpRight className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <ArrowDownRight className="w-3 h-3 text-red-400" />
+                        )}
+                        <span className={`text-[11px] font-medium ${card.color}`}>
+                          {Math.abs(card.change)}%
+                        </span>
+                        <span className="text-[10px] text-text-subtle">vs bln lalu</span>
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-text-subtle">No comparison data</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </motion.div>

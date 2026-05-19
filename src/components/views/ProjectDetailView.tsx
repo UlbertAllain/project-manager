@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import { motion } from "framer-motion";
 import { useProject, useUpdateProjectMutation } from "@/hooks/useProject";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCreateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
 import { useCreateComment } from "@/hooks/useComments";
 import { useDuplicateProject } from "@/hooks/useDuplicateProject";
@@ -29,6 +30,7 @@ import { CommentSection } from "@/components/project/CommentSection";
 import { ActivitySection } from "@/components/project/ActivitySection";
 import { AttachmentSection } from "@/components/project/AttachmentSection";
 import { DeleteConfirmDialog } from "@/components/project/DeleteConfirmDialog";
+import { ProjectDetailSkeleton } from "@/components/ui/skeleton-loader";
 
 interface ProjectDetailViewProps {
   projectId: string;
@@ -46,8 +48,10 @@ export function ProjectDetailView({
   const createCommentMutation = useCreateComment();
   const duplicateProjectMutation = useDuplicateProject();
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState("overview");
+  const [coverLoading, setCoverLoading] = useState(false);
 
   // Task form
   const [newTask, setNewTask] = useState("");
@@ -79,6 +83,25 @@ export function ProjectDetailView({
     type: "task" | "transaction";
     id: string;
   } | null>(null);
+
+  // --- Cover generation handler ---
+  const handleGenerateCover = async (prompt?: string) => {
+    setCoverLoading(true);
+    try {
+      const res = await fetch("/api/ai/generate-cover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, prompt }),
+      });
+      if (!res.ok) throw new Error("Failed to generate cover");
+      toast.success("Cover image berhasil dibuat!");
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    } catch {
+      toast.error("Gagal membuat cover image");
+    } finally {
+      setCoverLoading(false);
+    }
+  };
 
   // --- Duplicate handler ---
   const handleDuplicate = async () => {
@@ -313,15 +336,7 @@ export function ProjectDetailView({
   };
 
   if (loading) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-6 h-6 bg-base-card rounded animate-pulse" />
-          <div className="h-6 w-48 bg-base-card rounded animate-pulse" />
-        </div>
-        <div className="h-64 bg-base-card rounded-lg border border-base-border animate-pulse" />
-      </div>
-    );
+    return <ProjectDetailSkeleton />;
   }
 
   if (!project) {
@@ -348,6 +363,9 @@ export function ProjectDetailView({
         statusSubmitting={statusSubmitting}
         onDuplicate={handleDuplicate}
         duplicateLoading={duplicateProjectMutation.isPending}
+        coverImage={project.coverImage}
+        onGenerateCover={handleGenerateCover}
+        coverLoading={coverLoading}
       />
 
       {/* Notes (if any) - shown above tabs */}

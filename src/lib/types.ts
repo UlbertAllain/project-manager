@@ -20,6 +20,7 @@ export interface Project {
   paymentStatus: string;
   progress: number;
   notes: string;
+  coverImage?: string | null;
   createdAt: string;
   updatedAt: string;
   tasks: Task[];

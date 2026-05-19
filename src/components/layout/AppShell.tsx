@@ -6,6 +6,7 @@ import { AppSidebar } from "./AppSidebar";
 import { BreadcrumbNav } from "./BreadcrumbNav";
 import { Menu } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
 
 interface AppShellProps {
   currentView: string;
@@ -93,7 +94,10 @@ export function AppShell({
         </div>
 
         {/* Content area */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto">
+          <OfflineIndicator />
+          <div className="p-4 md:p-8">{children}</div>
+        </main>
       </div>
     </div>
   );

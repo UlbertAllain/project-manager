@@ -36,6 +36,7 @@ model Project {
   paymentStatus String   @default("UNPAID")
   progress      Int      @default(0)
   notes         String   @default("")
+  coverImage    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Project } from "@/lib/types";
 import {
   STATUS_LABELS,
@@ -19,7 +20,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Copy, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ArrowLeft, Copy, Loader2, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ProjectHeaderProps {
@@ -29,6 +36,9 @@ interface ProjectHeaderProps {
   statusSubmitting: boolean;
   onDuplicate?: () => void;
   duplicateLoading?: boolean;
+  coverImage?: string | null;
+  onGenerateCover?: (prompt?: string) => void;
+  coverLoading?: boolean;
 }
 
 export function ProjectHeader({
@@ -38,12 +48,27 @@ export function ProjectHeader({
   statusSubmitting,
   onDuplicate,
   duplicateLoading,
+  coverImage,
+  onGenerateCover,
+  coverLoading,
 }: ProjectHeaderProps) {
   const deadlineStatus = getDeadlineStatus(project.status, project.deadline);
   const paidPercent =
     project.budget > 0
       ? Math.round((project.paidAmount / project.budget) * 100)
       : 0;
+
+  // Cover generation popover state
+  const [coverPrompt, setCoverPrompt] = useState("");
+  const [coverPopoverOpen, setCoverPopoverOpen] = useState(false);
+
+  const handleGenerate = () => {
+    if (onGenerateCover) {
+      onGenerateCover(coverPrompt.trim() || undefined);
+      setCoverPopoverOpen(false);
+      setCoverPrompt("");
+    }
+  };
 
   return (
     <motion.div
@@ -52,8 +77,22 @@ export function ProjectHeader({
       transition={{ duration: 0.2 }}
       className="space-y-4"
     >
+      {/* Cover Image Banner */}
+      <div className="relative w-full h-32 md:h-40 rounded-lg overflow-hidden">
+        {coverImage ? (
+          <img
+            src={`data:image/png;base64,${coverImage}`}
+            alt="Project cover"
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-brand-primary/20 via-brand-primary/5 to-transparent" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-base-bg/80 to-transparent" />
+      </div>
+
       {/* Navigation */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={onBack}
           className="p-1.5 rounded hover:bg-base-hover text-text-muted hover:text-text-main transition-colors"
@@ -66,6 +105,72 @@ export function ProjectHeader({
           </h1>
           <p className="text-sm text-text-muted">{project.clientName}</p>
         </div>
+
+        <div className="flex items-center gap-2">
+          {/* AI Cover Button */}
+          {onGenerateCover && (
+          <Popover
+            open={coverPopoverOpen}
+            onOpenChange={setCoverPopoverOpen}
+          >
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={coverLoading}
+                className="h-8 gap-1.5 text-text-muted hover:text-text-main"
+                title="Generate AI Cover"
+              >
+                {coverLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                <span className="text-xs">AI Cover</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-72 bg-base-card border-base-border"
+              align="end"
+            >
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium text-text-main">
+                    Generate AI Cover
+                  </h4>
+                  <p className="text-xs text-text-muted">
+                    Buat cover image otomatis berdasarkan data project, atau
+                    masukkan custom prompt.
+                  </p>
+                </div>
+                <Input
+                  placeholder="Custom prompt (opsional)..."
+                  value={coverPrompt}
+                  onChange={(e) => setCoverPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleGenerate();
+                  }}
+                  className="h-8 text-xs bg-base-hover border-base-border"
+                  disabled={coverLoading}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleGenerate}
+                  disabled={coverLoading}
+                  className="w-full h-8 text-xs gap-1.5"
+                >
+                  {coverLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  {coverLoading ? "Generating..." : "Generate"}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+
         {onDuplicate && (
           <Button
             variant="ghost"
@@ -83,6 +188,7 @@ export function ProjectHeader({
             <span className="text-xs">Duplikasi</span>
           </Button>
         )}
+        </div>
       </div>
 
       {/* Status & Info Bar */}

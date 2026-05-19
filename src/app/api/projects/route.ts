@@ -16,8 +16,8 @@ export async function GET() {
       },
     });
 
-    // Parse techStack JSON string back to array
-    const result = projects.map((p) => ({
+    // Parse techStack JSON string back to array, exclude coverImage for performance
+    const result = projects.map(({ coverImage: _ci, ...p }) => ({
       ...p,
       techStack: JSON.parse(p.techStack || "[]"),
     }));

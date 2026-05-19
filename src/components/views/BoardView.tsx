@@ -32,6 +32,8 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjects, useUpdateProject } from "@/hooks/useProjects";
 import { useQueryClient } from "@tanstack/react-query";
+import { KanbanColumnSkeleton } from "@/components/ui/skeleton-loader";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface BoardViewProps {
   onSelectProject: (id: string) => void;
@@ -171,13 +173,13 @@ export function BoardView({ onSelectProject }: BoardViewProps) {
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="h-8 w-32 bg-base-card rounded animate-pulse" />
+        <div>
+          <Skeleton className="h-6 w-20 mb-1" />
+          <Skeleton className="h-4 w-64" />
+        </div>
         <div className="flex gap-3 overflow-x-auto pb-4">
-          {BOARD_COLUMNS.map((_, i) => (
-            <div
-              key={i}
-              className="w-72 shrink-0 h-96 bg-base-card rounded-lg border border-base-border animate-pulse"
-            />
+          {Array.from({ length: 4 }).map((_, i) => (
+            <KanbanColumnSkeleton key={i} />
           ))}
         </div>
       </div>
