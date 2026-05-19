@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { Project } from "@/lib/types";
 import {
   STATUS_LABELS,
@@ -44,6 +44,7 @@ import {
   ExternalLink,
   Loader2,
   FolderKanban,
+  Download,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -51,25 +52,34 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { exportProjectsCSV } from "@/lib/utils/exportCsv";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { DeleteConfirmDialog } from "@/components/project/DeleteConfirmDialog";
+import {
+  useProjects,
+  useCreateProject,
+  useUpdateProject,
+  useDeleteProject,
+} from "@/hooks/useProjects";
 
 interface ProjectsViewProps {
   onSelectProject: (id: string) => void;
 }
 
 export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: projects = [], isLoading: loading } = useProjects();
+  const createProject = useCreateProject();
+  const updateProject = useUpdateProject();
+  const deleteProject = useDeleteProject();
+
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // Debounce search
@@ -80,12 +90,6 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
     searchTimer.current = setTimeout(() => {
       setDebouncedSearch(val);
     }, 300);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    };
   }, []);
 
   // Form state
@@ -103,22 +107,6 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
     budget: "",
     notes: "",
   });
-
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const fetchProjects = async () => {
-    try {
-      const res = await fetch("/api/projects");
-      const data = await res.json();
-      setProjects(data.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const resetForm = () => {
     setForm({
@@ -167,100 +155,70 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
       return;
     }
 
-    setSubmitting(true);
     try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectName: form.projectName,
-          clientName: form.clientName,
-          projectLead: form.projectLead,
-          description: form.description,
-          status: form.status,
-          priority: form.priority,
-          category: form.category,
-          techStack: form.techStack
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-          startDate: form.startDate || undefined,
-          deadline: form.deadline || undefined,
-          budget: Number(form.budget) || 0,
-          notes: form.notes,
-        }),
+      await createProject.mutateAsync({
+        projectName: form.projectName,
+        clientName: form.clientName,
+        projectLead: form.projectLead,
+        description: form.description,
+        status: form.status,
+        priority: form.priority,
+        category: form.category,
+        techStack: form.techStack
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        startDate: form.startDate || undefined,
+        deadline: form.deadline || undefined,
+        budget: Number(form.budget) || 0,
+        notes: form.notes,
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Gagal membuat project");
-        return;
-      }
-
       toast.success("Project berhasil dibuat!");
       setShowCreateDialog(false);
       resetForm();
-      fetchProjects();
-    } catch {
-      toast.error("Terjadi kesalahan server");
-    } finally {
-      setSubmitting(false);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Terjadi kesalahan server"
+      );
     }
   };
 
   const handleUpdate = async () => {
     if (!editingProject) return;
 
-    setSubmitting(true);
     try {
-      const res = await fetch(`/api/projects/${editingProject.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectName: form.projectName,
-          clientName: form.clientName,
-          projectLead: form.projectLead,
-          description: form.description,
-          status: form.status,
-          priority: form.priority,
-          category: form.category,
-          techStack: form.techStack
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-          startDate: form.startDate || undefined,
-          deadline: form.deadline || undefined,
-          budget: Number(form.budget) || 0,
-          notes: form.notes,
-        }),
+      await updateProject.mutateAsync({
+        id: editingProject.id,
+        projectName: form.projectName,
+        clientName: form.clientName,
+        projectLead: form.projectLead,
+        description: form.description,
+        status: form.status,
+        priority: form.priority,
+        category: form.category,
+        techStack: form.techStack
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        startDate: form.startDate || undefined,
+        deadline: form.deadline || undefined,
+        budget: Number(form.budget) || 0,
+        notes: form.notes,
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Gagal update project");
-        return;
-      }
-
       toast.success("Project berhasil diupdate!");
       setShowEditDialog(false);
       setEditingProject(null);
-      fetchProjects();
-    } catch {
-      toast.error("Terjadi kesalahan server");
-    } finally {
-      setSubmitting(false);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Terjadi kesalahan server"
+      );
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        toast.error("Gagal menghapus project");
-        return;
-      }
+      await deleteProject.mutateAsync(id);
       toast.success("Project berhasil dihapus");
-      fetchProjects();
     } catch {
       toast.error("Terjadi kesalahan server");
     } finally {
@@ -498,14 +456,43 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
             {projects.length} project total
           </p>
         </div>
-        <Button
-          onClick={openCreateDialog}
-          size="sm"
-          className="h-8 text-xs gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New Project
-        </Button>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs gap-1.5 text-text-muted hover:text-text-main"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  if (filtered.length === 0) {
+                    toast.error("Tidak ada data untuk diexport");
+                    return;
+                  }
+                  exportProjectsCSV(filtered);
+                  toast.success("Data project berhasil diexport");
+                }}
+              >
+                <Download className="w-3.5 h-3.5 mr-2" />
+                Export CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            onClick={openCreateDialog}
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Project
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -713,10 +700,10 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
             <Button
               size="sm"
               onClick={handleCreate}
-              disabled={submitting}
+              disabled={createProject.isPending}
               className="gap-1.5"
             >
-              {submitting && (
+              {createProject.isPending && (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               )}
               Buat Project
@@ -755,10 +742,10 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
             <Button
               size="sm"
               onClick={handleUpdate}
-              disabled={submitting}
+              disabled={updateProject.isPending}
               className="gap-1.5"
             >
-              {submitting && (
+              {updateProject.isPending && (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               )}
               Update

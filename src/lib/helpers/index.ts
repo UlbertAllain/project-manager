@@ -131,3 +131,27 @@ export function formatBudgetShort(budget: number): string {
   if (budget >= 1_000_000) return `${(budget / 1_000_000).toFixed(0)}jt`;
   return formatRupiah(budget);
 }
+
+// ---------- Relative Time (Indonesian) ----------
+export function formatRelativeTime(dateString: string): string {
+  const now = Date.now();
+  const date = new Date(dateString).getTime();
+  const diff = now - date;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return "Baru saja";
+  if (minutes < 60) return `${minutes} menit lalu`;
+  if (hours < 24) return `${hours} jam lalu`;
+  if (days < 7) return `${days} hari lalu`;
+  if (days < 30) return `${Math.floor(days / 7)} minggu lalu`;
+  return formatDate(dateString, { day: "numeric", month: "short" });
+}
+
+// ---------- Days Remaining Until Deadline ----------
+export function getDaysRemaining(deadline: string): number {
+  const diff =
+    (new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+  return Math.ceil(diff);
+}

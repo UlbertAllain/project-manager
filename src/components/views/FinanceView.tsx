@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { Transaction, Project } from "@/lib/types";
-import { PAYMENT_BADGE_CLASSES, STATUS_LABELS } from "@/lib/constants";
+import { useState } from "react";
+import { PAYMENT_BADGE_CLASSES } from "@/lib/constants";
 import { formatRupiah, formatDate } from "@/lib/helpers";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,12 +13,11 @@ import {
 } from "@/components/ui/select";
 import {
   DollarSign,
-  TrendingUp,
-  TrendingDown,
   Wallet,
   ArrowUpRight,
   ArrowDownRight,
   BarChart3,
+  Download,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { motion } from "framer-motion";
@@ -30,8 +28,18 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Cell,
 } from "recharts";
+import { useTransactions } from "@/hooks/useTransactions";
+import { useProjects } from "@/hooks/useProjects";
+import { exportTransactionsCSV } from "@/lib/utils/exportCsv";
+import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 
 interface FinanceViewProps {
   onSelectProject?: (id: string) => void;
@@ -66,31 +74,12 @@ const CustomTooltip = ({
 };
 
 export function FinanceView({ onSelectProject }: FinanceViewProps) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
   const [projectFilter, setProjectFilter] = useState("ALL");
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const { data: transactions = [], isLoading: txLoading } = useTransactions();
+  const { data: projects = [], isLoading: projLoading } = useProjects();
 
-  const fetchData = async () => {
-    try {
-      const [txRes, projRes] = await Promise.all([
-        fetch("/api/transactions"),
-        fetch("/api/projects"),
-      ]);
-      const txData = await txRes.json();
-      const projData = await projRes.json();
-      setTransactions(txData.data || []);
-      setProjects(projData.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loading = txLoading || projLoading;
 
   // Stats
   const totalIncome = transactions
@@ -108,45 +97,42 @@ export function FinanceView({ onSelectProject }: FinanceViewProps) {
       : transactions.filter((t) => t.projectId === projectFilter);
 
   // Monthly chart data
-  const monthlyData = useMemo(() => {
-    const monthMap = new Map<
-      string,
-      { income: number; expense: number }
-    >();
+  const targetTransactions =
+    projectFilter === "ALL"
+      ? transactions
+      : transactions.filter((t) => t.projectId === projectFilter);
 
-    const targetTransactions =
-      projectFilter === "ALL"
-        ? transactions
-        : transactions.filter((t) => t.projectId === projectFilter);
-
-    targetTransactions.forEach((tx) => {
+  const monthMap = targetTransactions.reduce(
+    (acc, tx) => {
       const date = new Date(tx.date);
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      const existing = monthMap.get(key) || { income: 0, expense: 0 };
-      if (tx.type === "INCOME") {
-        existing.income += tx.amount;
-      } else {
-        existing.expense += tx.amount;
-      }
-      monthMap.set(key, existing);
-    });
+      const prev = acc[key] || { income: 0, expense: 0 };
+      return {
+        ...acc,
+        [key]: {
+          income: prev.income + (tx.type === "INCOME" ? tx.amount : 0),
+          expense: prev.expense + (tx.type === "EXPENSE" ? tx.amount : 0),
+        },
+      };
+    },
+    {} as Record<string, { income: number; expense: number }>
+  );
 
-    return Array.from(monthMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-6)
-      .map(([month, data]) => {
-        const [y, m] = month.split("-");
-        const monthName = new Date(Number(y), Number(m) - 1).toLocaleString(
-          "id-ID",
-          { month: "short" }
-        );
-        return {
-          name: monthName,
-          Income: data.income,
-          Expense: data.expense,
-        };
-      });
-  }, [transactions, projectFilter]);
+  const monthlyData = Object.entries(monthMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([month, data]) => {
+      const [y, m] = month.split("-");
+      const monthName = new Date(Number(y), Number(m) - 1).toLocaleString(
+        "id-ID",
+        { month: "short" }
+      );
+      return {
+        name: monthName,
+        Income: data.income,
+        Expense: data.expense,
+      };
+    });
 
   // Project budget summary
   const projectBudgets = projects.map((p) => ({
@@ -181,11 +167,40 @@ export function FinanceView({ onSelectProject }: FinanceViewProps) {
       transition={{ duration: 0.2 }}
       className="space-y-4 max-w-6xl"
     >
-      <div>
-        <h1 className="text-xl font-semibold text-text-main">Finance</h1>
-        <p className="text-sm text-text-muted mt-0.5">
-          Overview keuangan semua project
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-text-main">Finance</h1>
+          <p className="text-sm text-text-muted mt-0.5">
+            Overview keuangan semua project
+          </p>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs gap-1.5 text-text-muted hover:text-text-main"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => {
+                if (filtered.length === 0) {
+                  toast.error("Tidak ada data untuk diexport");
+                  return;
+                }
+                exportTransactionsCSV(filtered, projects);
+                toast.success("Data transaksi berhasil diexport");
+              }}
+            >
+              <Download className="w-3.5 h-3.5 mr-2" />
+              Export CSV
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Stats */}

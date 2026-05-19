@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Project } from "@/lib/types";
 import { STATUS_LABELS } from "@/lib/constants";
 import { recalculateProgress } from "@/lib/helpers";
@@ -16,6 +16,9 @@ import {
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import { motion } from "framer-motion";
+import { useProject, useUpdateProjectMutation } from "@/hooks/useProject";
+import { useCreateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
+import { useCreateComment } from "@/hooks/useComments";
 
 // Decomposed components
 import { ProjectHeader } from "@/components/project/ProjectHeader";
@@ -35,10 +38,14 @@ export function ProjectDetailView({
   projectId,
   onBack,
 }: ProjectDetailViewProps) {
-  const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview");
+  const { data: project, isLoading: loading } = useProject(projectId);
+  const updateProjectMutation = useUpdateProjectMutation(projectId);
+  const createTransactionMutation = useCreateTransaction();
+  const deleteTransactionMutation = useDeleteTransaction();
+  const createCommentMutation = useCreateComment();
   const { user } = useAuthStore();
+
+  const [activeTab, setActiveTab] = useState("overview");
 
   // Task form
   const [newTask, setNewTask] = useState("");
@@ -50,11 +57,9 @@ export function ProjectDetailView({
     description: "",
     date: new Date().toISOString().split("T")[0],
   });
-  const [txSubmitting, setTxSubmitting] = useState(false);
 
   // Comment form
   const [newComment, setNewComment] = useState("");
-  const [commentSubmitting, setCommentSubmitting] = useState(false);
 
   // Attachment form
   const [attForm, setAttForm] = useState({
@@ -73,49 +78,27 @@ export function ProjectDetailView({
     id: string;
   } | null>(null);
 
-  const fetchProject = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}`);
-      const data = await res.json();
-      setProject(data.data || null);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchProject();
-  }, [fetchProject]);
-
   // --- Task handlers ---
   const handleAddTask = async () => {
-    if (!newTask.trim()) return;
+    if (!newTask.trim() || !project) return;
     try {
-      const tasks = project?.tasks || [];
-      const res = await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tasks: [
-            ...tasks.map((t) => ({
-              title: t.title,
-              isCompleted: t.isCompleted,
-              order: t.order,
-            })),
-            {
-              title: newTask.trim(),
-              isCompleted: false,
-              order: tasks.length,
-            },
-          ],
-        }),
+      const tasks = project.tasks || [];
+      await updateProjectMutation.mutateAsync({
+        id: projectId,
+        tasks: [
+          ...tasks.map((t) => ({
+            title: t.title,
+            isCompleted: t.isCompleted,
+            order: t.order,
+          })),
+          {
+            title: newTask.trim(),
+            isCompleted: false,
+            order: tasks.length,
+          },
+        ],
       });
-      if (!res.ok) throw new Error();
       setNewTask("");
-      fetchProject();
       toast.success("Task ditambahkan");
     } catch {
       toast.error("Gagal menambah task");
@@ -130,19 +113,15 @@ export function ProjectDetailView({
     const progress = recalculateProgress(tasks);
 
     try {
-      await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tasks: tasks.map((t) => ({
-            title: t.title,
-            isCompleted: t.isCompleted,
-            order: t.order,
-          })),
-          progress,
-        }),
+      await updateProjectMutation.mutateAsync({
+        id: projectId,
+        tasks: tasks.map((t) => ({
+          title: t.title,
+          isCompleted: t.isCompleted,
+          order: t.order,
+        })),
+        progress,
       });
-      fetchProject();
     } catch {
       toast.error("Gagal update task");
     }
@@ -154,19 +133,15 @@ export function ProjectDetailView({
     const progress = recalculateProgress(tasks);
 
     try {
-      await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tasks: tasks.map((t, i) => ({
-            title: t.title,
-            isCompleted: t.isCompleted,
-            order: i,
-          })),
-          progress,
-        }),
+      await updateProjectMutation.mutateAsync({
+        id: projectId,
+        tasks: tasks.map((t, i) => ({
+          title: t.title,
+          isCompleted: t.isCompleted,
+          order: i,
+        })),
+        progress,
       });
-      fetchProject();
       toast.success("Task dihapus");
     } catch {
       toast.error("Gagal menghapus task");
@@ -179,17 +154,12 @@ export function ProjectDetailView({
   const handleStatusChange = async (newStatus: string) => {
     setStatusSubmitting(true);
     try {
-      const updateData: Record<string, unknown> = { status: newStatus };
+      const updateData: Record<string, unknown> = { status: newStatus, id: projectId };
       if (newStatus === "COMPLETED") {
         updateData.progress = 100;
         updateData.completedDate = new Date().toISOString();
       }
-      await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateData),
-      });
-      fetchProject();
+      await updateProjectMutation.mutateAsync(updateData);
       toast.success(`Status diubah ke ${STATUS_LABELS[newStatus]}`);
     } catch {
       toast.error("Gagal mengubah status");
@@ -204,37 +174,27 @@ export function ProjectDetailView({
       toast.error("Amount dan keterangan wajib diisi");
       return;
     }
-    setTxSubmitting(true);
     try {
-      const res = await fetch("/api/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...txForm,
-          amount: Number(txForm.amount),
-          projectId,
-        }),
+      await createTransactionMutation.mutateAsync({
+        ...txForm,
+        amount: Number(txForm.amount),
+        projectId,
       });
-      if (!res.ok) throw new Error();
       setTxForm({
         type: "INCOME",
         amount: "",
         description: "",
         date: new Date().toISOString().split("T")[0],
       });
-      fetchProject();
       toast.success("Transaksi ditambahkan");
     } catch {
       toast.error("Gagal menambah transaksi");
-    } finally {
-      setTxSubmitting(false);
     }
   };
 
   const handleDeleteTransaction = async (id: string) => {
     try {
-      await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-      fetchProject();
+      await deleteTransactionMutation.mutateAsync(id);
       toast.success("Transaksi dihapus");
     } catch {
       toast.error("Gagal menghapus transaksi");
@@ -246,25 +206,16 @@ export function ProjectDetailView({
   // --- Comment handler ---
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
-    setCommentSubmitting(true);
     try {
-      const res = await fetch("/api/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userEmail: user?.email || "unknown",
-          message: newComment.trim(),
-          projectId,
-        }),
+      await createCommentMutation.mutateAsync({
+        userEmail: user?.email || "unknown",
+        message: newComment.trim(),
+        projectId,
       });
-      if (!res.ok) throw new Error();
       setNewComment("");
-      fetchProject();
       toast.success("Komentar ditambahkan");
     } catch {
       toast.error("Gagal menambah komentar");
-    } finally {
-      setCommentSubmitting(false);
     }
   };
 
@@ -277,26 +228,22 @@ export function ProjectDetailView({
     setAttSubmitting(true);
     try {
       const currentAttachments = project?.attachments || [];
-      await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          attachments: [
-            ...currentAttachments.map((a) => ({
-              title: a.title,
-              url: a.url,
-              platform: a.platform,
-            })),
-            {
-              title: attForm.title,
-              url: attForm.url,
-              platform: attForm.platform,
-            },
-          ],
-        }),
+      await updateProjectMutation.mutateAsync({
+        id: projectId,
+        attachments: [
+          ...currentAttachments.map((a) => ({
+            title: a.title,
+            url: a.url,
+            platform: a.platform,
+          })),
+          {
+            title: attForm.title,
+            url: attForm.url,
+            platform: attForm.platform,
+          },
+        ],
       });
       setAttForm({ title: "", url: "", platform: "Lainnya" });
-      fetchProject();
       toast.success("Attachment ditambahkan");
     } catch {
       toast.error("Gagal menambah attachment");
@@ -428,7 +375,7 @@ export function ProjectDetailView({
             onDeleteTransaction={(id) =>
               setDeleteTarget({ type: "transaction", id })
             }
-            txSubmitting={txSubmitting}
+            txSubmitting={createTransactionMutation.isPending}
           />
         </TabsContent>
 
@@ -438,7 +385,7 @@ export function ProjectDetailView({
             newComment={newComment}
             onNewCommentChange={setNewComment}
             onAddComment={handleAddComment}
-            commentSubmitting={commentSubmitting}
+            commentSubmitting={createCommentMutation.isPending}
           />
         </TabsContent>
 

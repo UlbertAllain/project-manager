@@ -1,21 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Project } from "@/lib/types";
 import {
   STATUS_LABELS,
   STATUS_BADGE_CLASSES,
-  STATUS_COLORS,
-  PRIORITY_BADGE_CLASSES,
-  PAYMENT_BADGE_CLASSES,
   PROJECT_STATUSES,
-  ACTIVE_STATUSES,
 } from "@/lib/constants";
 import {
   formatRupiah,
   formatDate,
   getDeadlineStatus,
   formatBudgetShort,
+  formatRelativeTime,
+  getDaysRemaining,
+  getLogIcon,
 } from "@/lib/helpers";
 import {
   FolderKanban,
@@ -26,6 +23,12 @@ import {
   Clock,
   CheckCircle2,
   BarChart3,
+  CircleDollarSign,
+  Activity,
+  ShieldCheck,
+  ArrowUpRight,
+  ArrowDownRight,
+  Calendar,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -42,6 +45,9 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { useProjects } from "@/hooks/useProjects";
+import { useTransactions } from "@/hooks/useTransactions";
+import { useActivityLogs } from "@/hooks/useActivityLogs";
 
 interface DashboardViewProps {
   onNavigate: (view: string) => void;
@@ -72,28 +78,61 @@ const itemVariants = {
   show: { opacity: 1, y: 0 },
 };
 
+// Custom tooltip for charts - defined outside component to avoid re-creation
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color: string }>;
+  label?: string;
+}) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-base-card border border-base-border rounded-lg p-2 text-xs shadow-lg">
+        <p className="text-text-main font-medium mb-1">{label}</p>
+        {payload.map((p, i) => (
+          <p key={i} style={{ color: p.color }} className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: p.color }}
+            />
+            {p.name}: {p.name === "Budget" || p.name === "Paid" ? formatRupiah(p.value) : p.value}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+}
+
+// Deadline urgency color helper
+function getDeadlineUrgencyColor(daysRemaining: number): {
+  border: string;
+  text: string;
+  bg: string;
+} {
+  if (daysRemaining < 0) return { border: "border-l-red-500", text: "text-red-400", bg: "bg-red-500/10" };
+  if (daysRemaining <= 1) return { border: "border-l-orange-500", text: "text-orange-400", bg: "bg-orange-500/10" };
+  if (daysRemaining <= 3) return { border: "border-l-amber-500", text: "text-amber-400", bg: "bg-amber-500/10" };
+  if (daysRemaining <= 7) return { border: "border-l-yellow-500", text: "text-yellow-400", bg: "bg-yellow-500/10" };
+  return { border: "border-l-emerald-500", text: "text-emerald-400", bg: "bg-emerald-500/10" };
+}
+
+function formatDaysLabel(days: number): string {
+  if (days < 0) return `${Math.abs(days)} hari terlambat`;
+  if (days === 0) return "Hari ini";
+  return `${days} hari lagi`;
+}
+
 export function DashboardView({
   onNavigate,
   onSelectProject,
 }: DashboardViewProps) {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const fetchProjects = async () => {
-    try {
-      const res = await fetch("/api/projects");
-      const data = await res.json();
-      setProjects(data.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: projects = [], isLoading: loading } = useProjects();
+  const { data: allTransactions = [] } = useTransactions();
+  const { data: activityLogs = [] } = useActivityLogs();
 
   // Stats
   const totalProjects = projects.length;
@@ -110,6 +149,43 @@ export function DashboardView({
     (p) => getDeadlineStatus(p.status, p.deadline) === "OVERDUE"
   );
 
+  // Completed rate
+  const completedRate =
+    totalProjects > 0
+      ? Math.round((completedProjects / totalProjects) * 100)
+      : 0;
+
+  // Revenue trend calculation - monthly income for last 6 months
+  const now = new Date();
+  const monthlyIncomes: { month: string; income: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const income = allTransactions
+      .filter((t) => {
+        if (t.type !== "INCOME") return false;
+        const tDate = new Date(t.date);
+        return tDate.getFullYear() === year && tDate.getMonth() === month;
+      })
+      .reduce((acc, t) => acc + t.amount, 0);
+    monthlyIncomes.push({
+      month: d.toLocaleDateString("id-ID", { month: "short" }),
+      income,
+    });
+  }
+
+  // Revenue trend: compare last month vs previous month
+  const thisMonthIncome = monthlyIncomes[5]?.income ?? 0;
+  const lastMonthIncome = monthlyIncomes[4]?.income ?? 0;
+  const revenueTrendPercent =
+    lastMonthIncome > 0
+      ? Math.round(((thisMonthIncome - lastMonthIncome) / lastMonthIncome) * 100)
+      : thisMonthIncome > 0
+        ? 100
+        : 0;
+  const revenueTrendUp = thisMonthIncome >= lastMonthIncome;
+
   const stats = [
     {
       label: "Total Projects",
@@ -117,6 +193,7 @@ export function DashboardView({
       icon: FolderKanban,
       color: "text-blue-400",
       bg: "bg-blue-500/10",
+      sub: undefined as React.ReactNode | undefined,
     },
     {
       label: "Active",
@@ -124,6 +201,7 @@ export function DashboardView({
       icon: TrendingUp,
       color: "text-amber-400",
       bg: "bg-amber-500/10",
+      sub: undefined as React.ReactNode | undefined,
     },
     {
       label: "Revenue",
@@ -131,6 +209,20 @@ export function DashboardView({
       icon: DollarSign,
       color: "text-emerald-400",
       bg: "bg-emerald-500/10",
+      sub: thisMonthIncome > 0 ? (
+        <span
+          className={`text-[10px] flex items-center gap-0.5 ${
+            revenueTrendUp ? "text-emerald-400" : "text-red-400"
+          }`}
+        >
+          {revenueTrendUp ? (
+            <ArrowUpRight className="w-3 h-3" />
+          ) : (
+            <ArrowDownRight className="w-3 h-3" />
+          )}
+          {Math.abs(revenueTrendPercent)}% vs bln lalu
+        </span>
+      ) : undefined,
     },
     {
       label: "Overdue",
@@ -138,6 +230,27 @@ export function DashboardView({
       icon: AlertTriangle,
       color: "text-red-400",
       bg: "bg-red-500/10",
+      sub: undefined as React.ReactNode | undefined,
+    },
+    {
+      label: "Completed Rate",
+      value: `${completedRate}%`,
+      icon: ShieldCheck,
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10",
+      sub: (
+        <span className="text-[10px] text-text-subtle">
+          {completedProjects}/{totalProjects} project
+        </span>
+      ),
+    },
+    {
+      label: "Total Expense",
+      value: formatBudgetShort(totalExpense),
+      icon: CircleDollarSign,
+      color: "text-red-400",
+      bg: "bg-red-500/10",
+      sub: undefined as React.ReactNode | undefined,
     },
   ];
 
@@ -149,17 +262,23 @@ export function DashboardView({
     )
     .slice(0, 5);
 
-  // Near deadline projects
+  // Near deadline projects — enhanced with days remaining and color coding
   const nearDeadline = projects
     .filter(
       (p) =>
-        getDeadlineStatus(p.status, p.deadline) !== "SAFE" &&
-        !["COMPLETED", "CANCELLED"].includes(p.status)
+        !["COMPLETED", "CANCELLED"].includes(p.status) &&
+        p.deadline
     )
-    .sort(
-      (a, b) =>
-        new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
-    );
+    .map((p) => ({
+      ...p,
+      daysRemaining: getDaysRemaining(p.deadline),
+    }))
+    .filter((p) => p.daysRemaining <= 14) // Show projects within 2 weeks or overdue
+    .sort((a, b) => a.daysRemaining - b.daysRemaining)
+    .slice(0, 5);
+
+  // Activity feed — max 8 items
+  const activityFeed = activityLogs.slice(0, 8);
 
   // Chart data: Status distribution
   const statusChartData = PROJECT_STATUSES.map((status) => ({
@@ -184,40 +303,11 @@ export function DashboardView({
     })
   );
 
-  // Custom tooltip for charts
-  const CustomTooltip = ({
-    active,
-    payload,
-    label,
-  }: {
-    active?: boolean;
-    payload?: Array<{ value: number; name: string; color: string }>;
-    label?: string;
-  }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-base-card border border-base-border rounded-lg p-2 text-xs shadow-lg">
-          <p className="text-text-main font-medium mb-1">{label}</p>
-          {payload.map((p, i) => (
-            <p key={i} style={{ color: p.color }} className="flex items-center gap-1">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: p.color }}
-              />
-              {p.name}: {p.name === "Budget" || p.name === "Paid" ? formatRupiah(p.value) : p.value}
-            </p>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
-
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
               key={i}
               className="h-24 bg-base-card rounded-lg border border-base-border animate-pulse"
@@ -243,10 +333,10 @@ export function DashboardView({
         </p>
       </motion.div>
 
-      {/* Stats cards */}
+      {/* Stats cards — 6 cards */}
       <motion.div
         variants={itemVariants}
-        className="grid grid-cols-2 md:grid-cols-4 gap-3"
+        className="grid grid-cols-2 md:grid-cols-3 gap-3"
       >
         {stats.map((stat) => {
           const Icon = stat.icon;
@@ -268,6 +358,7 @@ export function DashboardView({
               <p className="text-lg font-semibold text-text-main">
                 {stat.value}
               </p>
+              {stat.sub && <div className="mt-1">{stat.sub}</div>}
             </div>
           );
         })}
@@ -394,12 +485,133 @@ export function DashboardView({
         </div>
       </motion.div>
 
-      {/* Lists row */}
+      {/* Activity Feed + Deadline Timeline */}
       <motion.div
         variants={itemVariants}
         className="grid grid-cols-1 lg:grid-cols-2 gap-4"
       >
-        {/* Recent Projects */}
+        {/* Activity Feed */}
+        <div className="bg-base-card border border-base-border rounded-lg">
+          <div className="flex items-center justify-between p-4 border-b border-base-border">
+            <h3 className="text-sm font-medium text-text-main flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-blue-400" />
+              Aktivitas Terbaru
+            </h3>
+            <button
+              className="text-xs text-brand-primary hover:underline flex items-center gap-1"
+              onClick={() => {
+                /* placeholder — no navigation yet */
+              }}
+            >
+              Lihat semua
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            {activityFeed.length === 0 ? (
+              <div className="p-8 text-center">
+                <div className="w-10 h-10 rounded-full bg-base-hover mx-auto mb-3 flex items-center justify-center">
+                  <Activity className="w-5 h-5 text-text-subtle" />
+                </div>
+                <p className="text-sm text-text-subtle">Belum ada aktivitas</p>
+                <p className="text-xs text-text-subtle mt-1">
+                  Aktivitas akan tercatat otomatis
+                </p>
+              </div>
+            ) : (
+              <div className="relative">
+                {/* Timeline line */}
+                <div className="absolute left-6 top-3 bottom-3 w-px bg-base-border" />
+                {activityFeed.map((log, i) => (
+                  <motion.div
+                    key={log.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.15, delay: i * 0.03 }}
+                    className="px-3 py-2 relative hover:bg-base-hover/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-5 h-5 rounded-full bg-base-hover border border-base-border flex items-center justify-center text-[10px] shrink-0 z-10 relative">
+                        {getLogIcon(log.action)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-text-muted truncate">
+                          {log.message}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => onSelectProject(log.project.id)}
+                        className="text-[10px] text-brand-primary hover:underline shrink-0 truncate max-w-[100px]"
+                      >
+                        {log.project.projectName}
+                      </button>
+                      <span className="text-[10px] text-text-subtle shrink-0 whitespace-nowrap">
+                        {formatRelativeTime(log.timestamp)}
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Deadline Timeline */}
+        <div className="bg-base-card border border-base-border rounded-lg">
+          <div className="flex items-center justify-between p-4 border-b border-base-border">
+            <h3 className="text-sm font-medium text-text-main flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              Deadline Timeline
+            </h3>
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            {nearDeadline.length === 0 ? (
+              <div className="p-8 text-center">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 mx-auto mb-3 flex items-center justify-center">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                </div>
+                <p className="text-sm text-emerald-400 font-medium">
+                  Semua aman
+                </p>
+                <p className="text-xs text-text-subtle mt-1">
+                  Tidak ada project mendekati deadline
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-base-border">
+                {nearDeadline.map((project) => {
+                  const urgency = getDeadlineUrgencyColor(project.daysRemaining);
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => onSelectProject(project.id)}
+                      className={`w-full text-left px-4 py-3 hover:bg-base-hover/50 transition-colors border-l-4 ${urgency.border}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-text-main font-medium truncate pr-2">
+                          {project.projectName}
+                        </span>
+                        <span
+                          className={`text-[11px] font-medium shrink-0 ${urgency.text}`}
+                        >
+                          {formatDaysLabel(project.daysRemaining)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-text-subtle">
+                        <Clock className="w-3 h-3" />
+                        <span>Deadline: {formatDate(project.deadline)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Recent Projects */}
+      <motion.div variants={itemVariants}>
         <div className="bg-base-card border border-base-border rounded-lg">
           <div className="flex items-center justify-between p-4 border-b border-base-border">
             <h3 className="text-sm font-medium text-text-main">
@@ -449,64 +661,6 @@ export function DashboardView({
                   </div>
                 </button>
               ))
-            )}
-          </div>
-        </div>
-
-        {/* Near Deadline */}
-        <div className="bg-base-card border border-base-border rounded-lg">
-          <div className="flex items-center justify-between p-4 border-b border-base-border">
-            <h3 className="text-sm font-medium text-text-main flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
-              Deadline Mendekat
-            </h3>
-          </div>
-          <div className="divide-y divide-base-border">
-            {nearDeadline.length === 0 ? (
-              <div className="p-8 text-center">
-                <div className="w-10 h-10 rounded-full bg-base-hover mx-auto mb-3 flex items-center justify-center">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                </div>
-                <p className="text-sm text-text-subtle">
-                  Semua project aman
-                </p>
-                <p className="text-xs text-text-subtle mt-1">
-                  Tidak ada project mendekati deadline
-                </p>
-              </div>
-            ) : (
-              nearDeadline.map((project) => {
-                const deadlineStatus = getDeadlineStatus(
-                  project.status,
-                  project.deadline
-                );
-                return (
-                  <button
-                    key={project.id}
-                    onClick={() => onSelectProject(project.id)}
-                    className="w-full text-left px-4 py-3 hover:bg-base-hover/50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm text-text-main font-medium truncate">
-                        {project.projectName}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] px-1.5 py-0 ${
-                          deadlineStatus === "OVERDUE"
-                            ? "bg-red-500/10 text-red-400 border-red-500/20"
-                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                        }`}
-                      >
-                        {deadlineStatus === "OVERDUE" ? "Overdue" : "Warning"}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-3 text-[11px] text-text-subtle">
-                      <span>Deadline: {formatDate(project.deadline)}</span>
-                    </div>
-                  </button>
-                );
-              })
             )}
           </div>
         </div>

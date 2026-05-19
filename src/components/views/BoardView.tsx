@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Project } from "@/lib/types";
 import {
   BOARD_COLUMNS,
@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
+import { useProjects, useUpdateProject } from "@/hooks/useProjects";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface BoardViewProps {
   onSelectProject: (id: string) => void;
@@ -38,28 +40,14 @@ interface BoardViewProps {
 type ViewMode = "kanban" | "list";
 
 export function BoardView({ onSelectProject }: BoardViewProps) {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: projects = [], isLoading: loading } = useProjects();
+  const updateProjectMutation = useUpdateProject();
+  const queryClient = useQueryClient();
+
   const [draggedProject, setDraggedProject] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
-
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const fetchProjects = async () => {
-    try {
-      const res = await fetch("/api/projects");
-      const data = await res.json();
-      setProjects(data.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDragStart = (e: React.DragEvent, projectId: string) => {
     setDraggedProject(projectId);
@@ -81,28 +69,37 @@ export function BoardView({ onSelectProject }: BoardViewProps) {
       return;
     }
 
-    // Optimistic update
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === draggedProject ? { ...p, status: newStatus } : p
-      )
+    // Optimistic update via queryClient
+    const updateData: Record<string, unknown> = { status: newStatus };
+    if (newStatus === "COMPLETED") {
+      updateData.progress = 100;
+      updateData.completedDate = new Date().toISOString();
+    }
+
+    // Cancel outgoing refetches
+    await queryClient.cancelQueries({ queryKey: ["projects"] });
+
+    // Snapshot previous value
+    const previousProjects = queryClient.getQueryData<Project[]>(["projects"]);
+
+    // Optimistically update the projects list
+    queryClient.setQueryData<Project[]>(
+      ["projects"],
+      (old) =>
+        old?.map((p) =>
+          p.id === draggedProject ? { ...p, ...updateData } : p
+        ) || []
     );
 
     try {
-      const updateData: Record<string, unknown> = { status: newStatus };
-      if (newStatus === "COMPLETED") {
-        updateData.progress = 100;
-        updateData.completedDate = new Date().toISOString();
-      }
-      await fetch(`/api/projects/${draggedProject}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateData),
-      });
+      await updateProjectMutation.mutateAsync({ id: draggedProject, ...updateData });
       toast.success(`Dipindahkan ke ${STATUS_LABELS[newStatus]}`);
     } catch {
       toast.error("Gagal mengubah status");
-      fetchProjects();
+      // Rollback on error
+      if (previousProjects) {
+        queryClient.setQueryData(["projects"], previousProjects);
+      }
     } finally {
       setDraggedProject(null);
     }
@@ -116,27 +113,36 @@ export function BoardView({ onSelectProject }: BoardViewProps) {
     const project = projects.find((p) => p.id === projectId);
     if (!project || project.status === newStatus) return;
 
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === projectId ? { ...p, status: newStatus } : p
-      )
+    const updateData: Record<string, unknown> = { status: newStatus };
+    if (newStatus === "COMPLETED") {
+      updateData.progress = 100;
+      updateData.completedDate = new Date().toISOString();
+    }
+
+    // Cancel outgoing refetches
+    await queryClient.cancelQueries({ queryKey: ["projects"] });
+
+    // Snapshot previous value
+    const previousProjects = queryClient.getQueryData<Project[]>(["projects"]);
+
+    // Optimistically update
+    queryClient.setQueryData<Project[]>(
+      ["projects"],
+      (old) =>
+        old?.map((p) =>
+          p.id === projectId ? { ...p, ...updateData } : p
+        ) || []
     );
 
     try {
-      const updateData: Record<string, unknown> = { status: newStatus };
-      if (newStatus === "COMPLETED") {
-        updateData.progress = 100;
-        updateData.completedDate = new Date().toISOString();
-      }
-      await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateData),
-      });
+      await updateProjectMutation.mutateAsync({ id: projectId, ...updateData });
       toast.success(`Dipindahkan ke ${STATUS_LABELS[newStatus]}`);
     } catch {
       toast.error("Gagal mengubah status");
-      fetchProjects();
+      // Rollback on error
+      if (previousProjects) {
+        queryClient.setQueryData(["projects"], previousProjects);
+      }
     }
   };
 

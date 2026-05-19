@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useState, useCallback, useSyncExternalStore } from "react";
 import { useAuthStore } from "@/stores/auth-store";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoginView } from "@/components/views/LoginView";
@@ -10,6 +10,8 @@ import { ProjectDetailView } from "@/components/views/ProjectDetailView";
 import { BoardView } from "@/components/views/BoardView";
 import { FinanceView } from "@/components/views/FinanceView";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { CommandPalette } from "@/components/search/CommandPalette";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { AnimatePresence, motion } from "framer-motion";
 
 type ViewType =
@@ -43,6 +45,7 @@ export default function Home() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null
   );
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Derive view from auth state (only after mount to avoid hydration mismatch)
   const effectiveView: ViewType =
@@ -71,6 +74,29 @@ export default function Home() {
   const handleLogin = () => {
     setCurrentView("dashboard");
   };
+
+  // Keyboard shortcuts — Escape handler
+  const handleEscape = useCallback(() => {
+    if (searchOpen) {
+      setSearchOpen(false);
+    } else if (effectiveView === "project-detail") {
+      handleBackFromDetail();
+    }
+  }, [searchOpen, effectiveView]);
+
+  // Keyboard shortcuts — New project handler
+  const handleNewProject = useCallback(() => {
+    setCurrentView("projects");
+  }, []);
+
+  // Register global keyboard shortcuts (disabled when on login view)
+  useKeyboardShortcuts({
+    onNavigate: handleNavigate,
+    onOpenSearch: () => setSearchOpen(true),
+    onNewProject: handleNewProject,
+    onEscape: handleEscape,
+    disabled: effectiveView === "login",
+  });
 
   // Show spinner while hydrating
   if (!isMounted) {
@@ -122,21 +148,35 @@ export default function Home() {
   };
 
   return (
-    <AppShell currentView={effectiveView} onNavigate={handleNavigate}>
-      <ErrorBoundary>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={effectiveView + (selectedProjectId || "")}
-            variants={pageVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.15, ease: "easeOut" }}
-          >
-            {renderContent()}
-          </motion.div>
-        </AnimatePresence>
-      </ErrorBoundary>
-    </AppShell>
+    <>
+      <AppShell
+        currentView={effectiveView}
+        onNavigate={handleNavigate}
+        onOpenSearch={() => setSearchOpen(true)}
+        onSelectProject={handleSelectProject}
+      >
+        <ErrorBoundary>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={effectiveView + (selectedProjectId || "")}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ duration: 0.15, ease: "easeOut" }}
+            >
+              {renderContent()}
+            </motion.div>
+          </AnimatePresence>
+        </ErrorBoundary>
+      </AppShell>
+
+      <CommandPalette
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onNavigate={handleNavigate}
+        onSelectProject={handleSelectProject}
+      />
+    </>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useAuthStore } from "@/stores/auth-store";
 import {
   LayoutDashboard,
@@ -9,8 +10,11 @@ import {
   LogOut,
   X,
   Zap,
+  Keyboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ShortcutHint } from "@/components/shortcuts/ShortcutHint";
+import { ShortcutsHelpDialog } from "@/components/shortcuts/ShortcutsHelpDialog";
 
 interface AppSidebarProps {
   isOpen: boolean;
@@ -20,10 +24,10 @@ interface AppSidebarProps {
 }
 
 const menuItems = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "projects", label: "Projects", icon: FolderKanban },
-  { key: "board", label: "Board", icon: KanbanSquare },
-  { key: "finance", label: "Finance", icon: DollarSign },
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, shortcut: ["G", "D"] },
+  { key: "projects", label: "Projects", icon: FolderKanban, shortcut: ["G", "P"] },
+  { key: "board", label: "Board", icon: KanbanSquare, shortcut: ["G", "B"] },
+  { key: "finance", label: "Finance", icon: DollarSign, shortcut: ["G", "F"] },
 ];
 
 export function AppSidebar({
@@ -33,6 +37,7 @@ export function AppSidebar({
   onNavigate,
 }: AppSidebarProps) {
   const { user, logout } = useAuthStore();
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   const handleNavigate = (view: string) => {
     onNavigate(view);
@@ -93,16 +98,20 @@ export function AppSidebar({
                 key={item.key}
                 onClick={() => handleNavigate(item.key)}
                 className={cn(
-                  "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors",
+                  "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors group",
                   isActive
                     ? "bg-base-hover text-text-main"
                     : "text-text-muted hover:text-text-main hover:bg-base-hover/60"
                 )}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
-                {isActive && (
-                  <div className="ml-auto w-1 h-1 rounded-full bg-brand-primary" />
+                <span className="flex-1 text-left">{item.label}</span>
+                {isActive ? (
+                  <div className="w-1 h-1 rounded-full bg-brand-primary" />
+                ) : (
+                  <span className="opacity-0 group-hover:opacity-100 lg:opacity-60 transition-opacity">
+                    <ShortcutHint keys={item.shortcut} />
+                  </span>
                 )}
               </button>
             );
@@ -119,6 +128,19 @@ export function AppSidebar({
               </p>
             </div>
           )}
+
+          {/* Keyboard shortcuts help button */}
+          <button
+            onClick={() => setShortcutsHelpOpen(true)}
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium text-text-muted hover:text-text-main hover:bg-base-hover/60 transition-colors mb-0.5"
+          >
+            <Keyboard className="w-4 h-4 shrink-0" />
+            <span>Shortcuts</span>
+            <span className="ml-auto opacity-60">
+              <ShortcutHint keys={["?"]} />
+            </span>
+          </button>
+
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium text-text-muted hover:text-red-400 hover:bg-red-500/5 transition-colors"
@@ -128,6 +150,12 @@ export function AppSidebar({
           </button>
         </div>
       </aside>
+
+      {/* Shortcuts Help Dialog */}
+      <ShortcutsHelpDialog
+        open={shortcutsHelpOpen}
+        onOpenChange={setShortcutsHelpOpen}
+      />
     </>
   );
 }

@@ -10,12 +10,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface AppShellProps {
   currentView: string;
   onNavigate: (view: string) => void;
+  onOpenSearch?: () => void;
+  onSelectProject: (id: string) => void;
   children: React.ReactNode;
 }
 
 export function AppShell({
   currentView,
   onNavigate,
+  onOpenSearch,
+  onSelectProject,
   children,
 }: AppShellProps) {
   const { isAuthenticated } = useAuthStore();
@@ -38,6 +42,7 @@ export function AppShell({
       <div className="flex h-screen bg-base-bg">
         <div className="hidden md:flex w-60 border-r border-base-border flex-col gap-4 p-4">
           <Skeleton className="h-8 w-28" />
+          <Skeleton className="h-6 w-full" />
           <Skeleton className="h-6 w-full" />
           <Skeleton className="h-6 w-full" />
           <Skeleton className="h-6 w-full" />
@@ -78,8 +83,13 @@ export function AppShell({
             <Menu className="w-5 h-5" />
           </button>
 
-          {/* Breadcrumbs */}
-          <BreadcrumbNav currentView={currentView} onNavigate={onNavigate} />
+          {/* Breadcrumbs + Search + Notifications */}
+          <BreadcrumbNav
+            currentView={currentView}
+            onNavigate={onNavigate}
+            onOpenSearch={onOpenSearch}
+            onSelectProject={onSelectProject}
+          />
         </div>
 
         {/* Content area */}
