@@ -4,14 +4,14 @@ import { NextResponse } from "next/server";
 // POST /api/seed — seed demo data
 export async function POST() {
   try {
-    // Create demo user
+    // Create demo user — matches existing Firebase user
     const user = await db.user.upsert({
-      where: { email: "admin@nextylabs.com" },
+      where: { email: "admin@nextylab.com" },
       update: {},
       create: {
-        email: "admin@nextylabs.com",
+        email: "admin@nextylab.com",
         name: "Admin Nexty Labs",
-        password: "demo123",
+        password: "admin123",
         role: "ADMIN",
       },
     });
@@ -19,7 +19,7 @@ export async function POST() {
     // Helper to create ISO date string
     const isoDate = (dateStr: string) => new Date(dateStr).toISOString();
 
-    // Create demo projects one by one to handle errors gracefully
+    // Create demo projects
     const projects: { id: string; projectName: string }[] = [];
 
     // Project 1: E-Commerce
@@ -33,7 +33,7 @@ export async function POST() {
         status: "IN_PROGRESS",
         priority: "HIGH",
         category: "WEB",
-        techStack: JSON.stringify(["Next.js", "TypeScript", "Prisma", "Tailwind CSS"]),
+        techStack: JSON.stringify(["Next.js", "TypeScript", "Firebase", "Tailwind CSS"]),
         startDate: isoDate("2025-01-15"),
         deadline: isoDate("2025-03-30"),
         budget: 25000000,
@@ -67,8 +67,8 @@ export async function POST() {
         },
         comments: {
           create: [
-            { userEmail: "admin@nextylabs.com", message: "Design sudah diapprove client. Lanjut development." },
-            { userEmail: "admin@nextylabs.com", message: "Deadline mepet, perlu speed up di bagian checkout." },
+            { userEmail: "admin@nextylab.com", message: "Design sudah diapprove client. Lanjut development." },
+            { userEmail: "admin@nextylab.com", message: "Deadline mepet, perlu speed up di bagian checkout." },
           ],
         },
       },

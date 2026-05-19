@@ -1,14 +1,46 @@
 // Firestore utility functions that mirror Prisma operations
-// This replaces the old lib/db.ts (Prisma) with Firebase Firestore equivalents
+// This replaces the old Prisma db client with Firebase Firestore equivalents
 
 import { collections, adminDb } from '@/lib/firebase-admin';
 import {
   DocumentSnapshot,
-  QuerySnapshot,
   QueryDocumentSnapshot,
-  FieldValue,
 } from 'firebase-admin/firestore';
 import type { Project, Task, LinkAttachment, Transaction, Comment, ActivityLog, AuthUser } from '@/lib/types';
+
+// ==================== SHARED TYPES ====================
+
+type ProjectWithRelations = Project & {
+  tasks: Task[];
+  attachments: LinkAttachment[];
+  transactions: Transaction[];
+  comments: Comment[];
+  logs: ActivityLog[];
+};
+
+type ProjectCreateResult = {
+  id: string;
+  projectName: string;
+  clientName: string;
+  projectLead: string;
+  description: string;
+  status: string;
+  priority: string;
+  category: string;
+  techStack: string | string[];
+  startDate: string;
+  deadline: string;
+  completedDate: string | null;
+  budget: number;
+  paidAmount: number;
+  totalExpense: number;
+  paymentStatus: string;
+  progress: number;
+  notes: string;
+  coverImage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 // ==================== HELPERS ====================
 
@@ -25,21 +57,15 @@ function generateId(): string {
   return adminDb.collection('_tmp').doc().id;
 }
 
-function toTimestamp(date: Date | string | FieldValue): string {
-  if (typeof date === 'string') return date;
-  if (date instanceof Date) return date.toISOString();
-  return new Date().toISOString();
-}
-
 // ==================== PROJECT OPERATIONS ====================
 
-async function getProjectWithRelations(projectId: string) {
+async function getProjectWithRelations(projectId: string): Promise<ProjectWithRelations | null> {
   const projectDoc = await collections.projects.doc(projectId).get();
   if (!projectDoc.exists) return null;
 
   const projectData = projectDoc.data()!;
 
-  // Fetch related collections
+  // Fetch related collections in parallel
   const [tasksSnap, attachmentsSnap, transactionsSnap, commentsSnap, logsSnap] = await Promise.all([
     collections.tasks.where('projectId', '==', projectId).orderBy('order', 'asc').get(),
     collections.attachments.where('projectId', '==', projectId).get(),
@@ -57,7 +83,7 @@ async function getProjectWithRelations(projectId: string) {
     transactions: transactionsSnap.docs.map((d) => docToObj<Transaction>(d)),
     comments: commentsSnap.docs.map((d) => docToObj<Comment>(d)),
     logs: logsSnap.docs.map((d) => docToObj<ActivityLog>(d)),
-  };
+  } as ProjectWithRelations;
 }
 
 // ==================== DB OBJECT (mirrors Prisma API) ====================
@@ -65,7 +91,7 @@ async function getProjectWithRelations(projectId: string) {
 export const db = {
   // ===== USER =====
   user: {
-    findUnique: async ({ where }: { where: { id?: string; email?: string } }) => {
+    findUnique: async ({ where }: { where: { id?: string; email?: string } }): Promise<(AuthUser & { password?: string }) | null> => {
       if (where.email) {
         const snap = await collections.users.where('email', '==', where.email).limit(1).get();
         if (snap.empty) return null;
@@ -79,12 +105,13 @@ export const db = {
       return null;
     },
 
-    upsert: async ({ where, update, create }: { where: { email: string }; update: Record<string, unknown>; create: Record<string, unknown> }) => {
+    upsert: async ({ where, update, create }: { where: { email: string }; update: Record<string, unknown>; create: Record<string, unknown> }): Promise<AuthUser & { password?: string }> => {
       const snap = await collections.users.where('email', '==', where.email).limit(1).get();
       if (!snap.empty) {
         const existingDoc = snap.docs[0];
         await collections.users.doc(existingDoc.id).update(update);
-        return docToObj<AuthUser & { password?: string }>(await collections.users.doc(existingDoc.id).get());
+        const updatedDoc = await collections.users.doc(existingDoc.id).get();
+        return docToObj<AuthUser & { password?: string }>(updatedDoc);
       }
       const id = generateId();
       const now = new Date().toISOString();
@@ -93,13 +120,13 @@ export const db = {
       return { id, ...data } as AuthUser & { password?: string };
     },
 
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }): Promise<AuthUser> => {
       await collections.users.doc(where.id).update({ ...data, updatedAt: new Date().toISOString() });
       const doc = await collections.users.doc(where.id).get();
       return docToObj<AuthUser>(doc);
     },
 
-    create: async ({ data }: { data: Record<string, unknown> }) => {
+    create: async ({ data }: { data: Record<string, unknown> }): Promise<AuthUser & { password?: string }> => {
       const id = generateId();
       const now = new Date().toISOString();
       const docData = { ...data, createdAt: now, updatedAt: now };
@@ -114,11 +141,10 @@ export const db = {
       orderBy?: Record<string, string>;
       include?: Record<string, unknown>;
       where?: Record<string, unknown>;
-    }) => {
+    }): Promise<Record<string, unknown>[]> => {
       let query = collections.projects.orderBy('createdAt', 'desc');
 
       if (opts?.where) {
-        // Apply where filters
         for (const [key, value] of Object.entries(opts.where)) {
           if (key === 'id' && typeof value === 'object' && value !== null && 'in' in (value as object)) {
             query = query.where(key, 'in', (value as { in: string[] }).in);
@@ -129,11 +155,11 @@ export const db = {
       }
 
       const snap = await query.get();
-      const projects = [];
+      const projects: Record<string, unknown>[] = [];
 
       for (const doc of snap.docs) {
         const projectData = doc.data();
-        let project: Record<string, unknown> = {
+        const project: Record<string, unknown> = {
           id: doc.id,
           ...projectData,
           techStack: JSON.parse(projectData.techStack || '[]'),
@@ -168,7 +194,7 @@ export const db = {
       return projects;
     },
 
-    findUnique: async ({ where, include }: { where: { id: string }; include?: Record<string, unknown> }) => {
+    findUnique: async ({ where, include }: { where: { id: string }; include?: Record<string, unknown> }): Promise<ProjectWithRelations | Project | null> => {
       if (include) {
         return getProjectWithRelations(where.id);
       }
@@ -179,10 +205,10 @@ export const db = {
         id: doc.id,
         ...data,
         techStack: JSON.parse(data.techStack || '[]'),
-      };
+      } as Project;
     },
 
-    create: async ({ data, include }: { data: Record<string, unknown>; include?: Record<string, unknown> }) => {
+    create: async ({ data, include }: { data: Record<string, unknown>; include?: Record<string, unknown> }): Promise<ProjectCreateResult> => {
       const id = generateId();
       const now = new Date().toISOString();
 
@@ -244,24 +270,34 @@ export const db = {
       }
 
       if (include) {
-        return getProjectWithRelations(id);
+        const result = await getProjectWithRelations(id);
+        return result as unknown as ProjectCreateResult;
       }
 
       const doc = await collections.projects.doc(id).get();
-      return { id: doc.id, ...doc.data()!, techStack: JSON.parse(doc.data()!.techStack || '[]') };
+      const docDataResult = doc.data()!;
+      return {
+        id: doc.id,
+        ...docDataResult,
+        techStack: JSON.parse(docDataResult.techStack || '[]'),
+      } as unknown as ProjectCreateResult;
     },
 
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }): Promise<Project> => {
       await collections.projects.doc(where.id).update({
         ...data,
         updatedAt: new Date().toISOString(),
       });
       const doc = await collections.projects.doc(where.id).get();
-      return { id: doc.id, ...doc.data()!, techStack: JSON.parse(doc.data()!.techStack || '[]') };
+      const docData = doc.data()!;
+      return {
+        id: doc.id,
+        ...docData,
+        techStack: JSON.parse(docData.techStack || '[]'),
+      } as Project;
     },
 
-    delete: async ({ where }: { where: { id: string } }) => {
-      // Delete all related records first (cascade)
+    delete: async ({ where }: { where: { id: string } }): Promise<{ success: boolean }> => {
       const projectId = where.id;
 
       const [tasksSnap, attachmentsSnap, transactionsSnap, commentsSnap, logsSnap] = await Promise.all([
@@ -287,19 +323,19 @@ export const db = {
 
   // ===== TASK =====
   task: {
-    create: async ({ data }: { data: Record<string, unknown> }) => {
+    create: async ({ data }: { data: Record<string, unknown> }): Promise<Task> => {
       const id = generateId();
       await collections.tasks.doc(id).set(data);
-      return { id, ...data } as Task;
+      return { id, ...data } as unknown as Task;
     },
 
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }): Promise<Task> => {
       await collections.tasks.doc(where.id).update(data);
       const doc = await collections.tasks.doc(where.id).get();
       return docToObj<Task>(doc);
     },
 
-    delete: async ({ where }: { where: { id: string } }) => {
+    delete: async ({ where }: { where: { id: string } }): Promise<{ success: boolean }> => {
       await collections.tasks.doc(where.id).delete();
       return { success: true };
     },
@@ -307,13 +343,13 @@ export const db = {
 
   // ===== ATTACHMENT =====
   attachment: {
-    create: async ({ data }: { data: Record<string, unknown> }) => {
+    create: async ({ data }: { data: Record<string, unknown> }): Promise<LinkAttachment> => {
       const id = generateId();
       await collections.attachments.doc(id).set(data);
-      return { id, ...data } as LinkAttachment;
+      return { id, ...data } as unknown as LinkAttachment;
     },
 
-    delete: async ({ where }: { where: { id: string } }) => {
+    delete: async ({ where }: { where: { id: string } }): Promise<{ success: boolean }> => {
       await collections.attachments.doc(where.id).delete();
       return { success: true };
     },
@@ -321,13 +357,12 @@ export const db = {
 
   // ===== TRANSACTION =====
   transaction: {
-    findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string>; include?: Record<string, unknown> }) => {
+    findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string>; include?: Record<string, unknown> }): Promise<Record<string, unknown>[]> => {
       let query = collections.transactions.orderBy('date', 'desc');
 
       if (opts?.where) {
         for (const [key, value] of Object.entries(opts.where)) {
           if (key === 'date' && typeof value === 'object' && value !== null) {
-            // Date range filter
             const dateFilter = value as Record<string, string>;
             if (dateFilter.gte) query = query.where('date', '>=', dateFilter.gte);
             if (dateFilter.lte) query = query.where('date', '<=', dateFilter.lte);
@@ -338,7 +373,7 @@ export const db = {
       }
 
       const snap = await query.get();
-      const transactions = [];
+      const transactions: Record<string, unknown>[] = [];
 
       for (const doc of snap.docs) {
         const txData: Record<string, unknown> = { id: doc.id, ...doc.data() };
@@ -354,27 +389,27 @@ export const db = {
       return transactions;
     },
 
-    findUnique: async ({ where }: { where: { id: string } }) => {
+    findUnique: async ({ where }: { where: { id: string } }): Promise<Transaction | null> => {
       const doc = await collections.transactions.doc(where.id).get();
       if (!doc.exists) return null;
       return docToObj<Transaction>(doc);
     },
 
-    create: async ({ data }: { data: Record<string, unknown> }) => {
+    create: async ({ data }: { data: Record<string, unknown> }): Promise<Transaction> => {
       const id = generateId();
       const now = new Date().toISOString();
       const docData = { ...data, createdAt: now };
       await collections.transactions.doc(id).set(docData);
-      return { id, ...docData } as Transaction;
+      return { id, ...docData } as unknown as Transaction;
     },
 
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }): Promise<Transaction> => {
       await collections.transactions.doc(where.id).update(data);
       const doc = await collections.transactions.doc(where.id).get();
       return docToObj<Transaction>(doc);
     },
 
-    delete: async ({ where }: { where: { id: string } }) => {
+    delete: async ({ where }: { where: { id: string } }): Promise<{ success: boolean }> => {
       await collections.transactions.doc(where.id).delete();
       return { success: true };
     },
@@ -382,7 +417,7 @@ export const db = {
 
   // ===== COMMENT =====
   comment: {
-    findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string> }) => {
+    findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string> }): Promise<Comment[]> => {
       let query = collections.comments.orderBy('createdAt', 'desc');
       if (opts?.where?.projectId) {
         query = query.where('projectId', '==', opts.where.projectId);
@@ -391,18 +426,18 @@ export const db = {
       return snap.docs.map((d) => docToObj<Comment>(d));
     },
 
-    create: async ({ data }: { data: Record<string, unknown> }) => {
+    create: async ({ data }: { data: Record<string, unknown> }): Promise<Comment> => {
       const id = generateId();
       const now = new Date().toISOString();
       const docData = { ...data, createdAt: now };
       await collections.comments.doc(id).set(docData);
-      return { id, ...docData } as Comment;
+      return { id, ...docData } as unknown as Comment;
     },
   },
 
   // ===== ACTIVITY LOG =====
   activityLog: {
-    findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string>; take?: number; include?: Record<string, unknown> }) => {
+    findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string>; take?: number; include?: Record<string, unknown> }): Promise<Record<string, unknown>[]> => {
       let query = collections.activityLogs.orderBy('timestamp', 'desc');
 
       if (opts?.where?.projectId) {
@@ -414,7 +449,7 @@ export const db = {
       }
 
       const snap = await query.get();
-      const logs = [];
+      const logs: Record<string, unknown>[] = [];
 
       for (const doc of snap.docs) {
         const logData: Record<string, unknown> = { id: doc.id, ...doc.data() };
@@ -432,12 +467,12 @@ export const db = {
       return logs;
     },
 
-    create: async ({ data }: { data: Record<string, unknown> }) => {
+    create: async ({ data }: { data: Record<string, unknown> }): Promise<ActivityLog> => {
       const id = generateId();
       const now = new Date().toISOString();
       const docData = { ...data, timestamp: now };
       await collections.activityLogs.doc(id).set(docData);
-      return { id, ...docData } as ActivityLog;
+      return { id, ...docData } as unknown as ActivityLog;
     },
   },
 };

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
-// POST /api/auth/login — simple auth (for demo, no bcrypt needed)
+// POST /api/auth/login — authenticate user against Firestore
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
@@ -25,6 +25,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("Login error:", error);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server error. Pastikan Firebase sudah dikonfigurasi di .env" },
+      { status: 500 }
+    );
   }
 }

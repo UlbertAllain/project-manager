@@ -77,7 +77,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@nextylabs.com"
+                placeholder="admin@nextylab.com"
                 className="w-full h-9 px-3 text-sm bg-base-bg border border-base-border rounded-md text-text-main placeholder:text-text-subtle focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
               />
             </div>
@@ -90,7 +90,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="demo123"
+                placeholder="admin123"
                 className="w-full h-9 px-3 text-sm bg-base-bg border border-base-border rounded-md text-text-main placeholder:text-text-subtle focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
               />
             </div>
@@ -107,7 +107,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
           <div className="mt-4 pt-4 border-t border-base-border">
             <p className="text-[11px] text-text-subtle text-center">
-              Demo: admin@nextylabs.com / demo123
+              Demo: admin@nextylab.com / admin123
             </p>
           </div>
         </div>
