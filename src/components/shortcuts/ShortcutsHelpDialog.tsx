@@ -20,6 +20,7 @@ const NAVIGATION_SHORTCUTS = [
   { label: "Go to Projects", keys: ["G", "P"] },
   { label: "Go to Board", keys: ["G", "B"] },
   { label: "Go to Finance", keys: ["G", "F"] },
+  { label: "Go to Settings", keys: ["G", "S"] },
 ];
 
 const ACTION_SHORTCUTS = [

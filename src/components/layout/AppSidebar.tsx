@@ -7,11 +7,13 @@ import {
   FolderKanban,
   KanbanSquare,
   DollarSign,
+  Settings,
   LogOut,
   X,
   Zap,
   Keyboard,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 import { ShortcutHint } from "@/components/shortcuts/ShortcutHint";
 import { ShortcutsHelpDialog } from "@/components/shortcuts/ShortcutsHelpDialog";
@@ -29,6 +31,8 @@ const menuItems = [
   { key: "board", label: "Board", icon: KanbanSquare, shortcut: ["G", "B"] },
   { key: "finance", label: "Finance", icon: DollarSign, shortcut: ["G", "F"] },
 ];
+
+const settingsItem = { key: "settings", label: "Settings", icon: Settings, shortcut: ["G", "S"] };
 
 export function AppSidebar({
   isOpen,
@@ -116,6 +120,36 @@ export function AppSidebar({
               </button>
             );
           })}
+
+          {/* Divider before Settings */}
+          <div className="my-2 mx-2 h-px bg-base-border" />
+
+          {/* Settings item */}
+          {(() => {
+            const Icon = settingsItem.icon;
+            const isActive = currentView === settingsItem.key;
+            return (
+              <button
+                onClick={() => handleNavigate(settingsItem.key)}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium transition-colors group",
+                  isActive
+                    ? "bg-base-hover text-text-main"
+                    : "text-text-subtle hover:text-text-main hover:bg-base-hover/60"
+                )}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left">{settingsItem.label}</span>
+                {isActive ? (
+                  <div className="w-1 h-1 rounded-full bg-brand-primary" />
+                ) : (
+                  <span className="opacity-0 group-hover:opacity-100 lg:opacity-60 transition-opacity">
+                    <ShortcutHint keys={settingsItem.shortcut} />
+                  </span>
+                )}
+              </button>
+            );
+          })()}
         </nav>
 
         {/* Footer */}
@@ -129,17 +163,20 @@ export function AppSidebar({
             </div>
           )}
 
-          {/* Keyboard shortcuts help button */}
-          <button
-            onClick={() => setShortcutsHelpOpen(true)}
-            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-[13px] font-medium text-text-muted hover:text-text-main hover:bg-base-hover/60 transition-colors mb-0.5"
-          >
-            <Keyboard className="w-4 h-4 shrink-0" />
-            <span>Shortcuts</span>
-            <span className="ml-auto opacity-60">
-              <ShortcutHint keys={["?"]} />
-            </span>
-          </button>
+          {/* Theme toggle + Shortcuts row */}
+          <div className="flex items-center gap-1 px-2.5 py-1.5 mb-0.5">
+            <ThemeToggle />
+            <button
+              onClick={() => setShortcutsHelpOpen(true)}
+              className="flex-1 flex items-center gap-2.5 px-1 py-0.5 rounded text-[13px] font-medium text-text-muted hover:text-text-main hover:bg-base-hover/60 transition-colors"
+            >
+              <Keyboard className="w-4 h-4 shrink-0" />
+              <span>Shortcuts</span>
+              <span className="ml-auto opacity-60">
+                <ShortcutHint keys={["?"]} />
+              </span>
+            </button>
+          </div>
 
           <button
             onClick={handleLogout}

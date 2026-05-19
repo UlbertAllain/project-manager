@@ -13,6 +13,7 @@ import {
   FolderKanban,
   KanbanSquare,
   DollarSign,
+  Settings,
   ChevronRight,
   Search,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const viewConfig: Record<
   },
   board: { label: "Board", icon: KanbanSquare },
   finance: { label: "Finance", icon: DollarSign },
+  settings: { label: "Settings", icon: Settings },
 };
 
 export function BreadcrumbNav({

@@ -15,6 +15,7 @@ import {
   FolderKanban,
   KanbanSquare,
   DollarSign,
+  Settings,
   Plus,
   Search,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { id: "projects", label: "Projects", icon: FolderKanban, keywords: "list all" },
   { id: "board", label: "Board", icon: KanbanSquare, keywords: "kanban drag drop" },
   { id: "finance", label: "Finance", icon: DollarSign, keywords: "money income expense" },
+  { id: "settings", label: "Settings", icon: Settings, keywords: "preferences profile theme appearance" },
 ];
 
 function ProjectResultItem({ project }: { project: Project }) {

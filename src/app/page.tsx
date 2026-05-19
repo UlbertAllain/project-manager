@@ -9,9 +9,11 @@ import { ProjectsView } from "@/components/views/ProjectsView";
 import { ProjectDetailView } from "@/components/views/ProjectDetailView";
 import { BoardView } from "@/components/views/BoardView";
 import { FinanceView } from "@/components/views/FinanceView";
+import { SettingsView } from "@/components/views/SettingsView";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CommandPalette } from "@/components/search/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useActivitySocket } from "@/hooks/useActivitySocket";
 import { AnimatePresence, motion } from "framer-motion";
 
 type ViewType =
@@ -20,7 +22,8 @@ type ViewType =
   | "projects"
   | "project-detail"
   | "board"
-  | "finance";
+  | "finance"
+  | "settings";
 
 // Hydration-safe client-only check
 const emptySubscribe = () => () => {};
@@ -74,6 +77,9 @@ export default function Home() {
   const handleLogin = () => {
     setCurrentView("dashboard");
   };
+
+  // WebSocket real-time sync (active only for authenticated users)
+  useActivitySocket();
 
   // Keyboard shortcuts — Escape handler
   const handleEscape = useCallback(() => {
@@ -137,6 +143,8 @@ export default function Home() {
         return <BoardView onSelectProject={handleSelectProject} />;
       case "finance":
         return <FinanceView onSelectProject={handleSelectProject} />;
+      case "settings":
+        return <SettingsView onNavigate={handleNavigate} />;
       default:
         return (
           <DashboardView

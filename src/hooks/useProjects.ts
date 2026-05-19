@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Project } from "@/lib/types";
+import { getSocket } from "@/lib/socket";
 
 async function fetchProjects(): Promise<Project[]> {
   const res = await fetch("/api/projects");
@@ -60,6 +61,12 @@ export function useCreateProject() {
     mutationFn: createProject,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      getSocket()?.emit("data-changed", { entity: "project" });
+      getSocket()?.emit("activity", {
+        type: "PROJECT_CREATED",
+        message: "New project created",
+        timestamp: new Date().toISOString(),
+      });
     },
   });
 }
@@ -69,9 +76,16 @@ export function useUpdateProject() {
 
   return useMutation({
     mutationFn: updateProject,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.invalidateQueries({ queryKey: ["project"] });
+      getSocket()?.emit("data-changed", { entity: "project", id: variables.id });
+      getSocket()?.emit("activity", {
+        type: "PROJECT_UPDATED",
+        projectId: variables.id,
+        message: "Project updated",
+        timestamp: new Date().toISOString(),
+      });
     },
   });
 }
@@ -81,8 +95,15 @@ export function useDeleteProject() {
 
   return useMutation({
     mutationFn: deleteProject,
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      getSocket()?.emit("data-changed", { entity: "project", id });
+      getSocket()?.emit("activity", {
+        type: "PROJECT_DELETED",
+        projectId: id,
+        message: "Project deleted",
+        timestamp: new Date().toISOString(),
+      });
     },
   });
 }

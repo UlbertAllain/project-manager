@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getSocket } from "@/lib/socket";
 
 async function createComment(payload: Record<string, unknown>) {
   const res = await fetch("/api/comments", {
@@ -19,9 +20,17 @@ export function useCreateComment() {
 
   return useMutation({
     mutationFn: createComment,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.invalidateQueries({ queryKey: ["project"] });
+      const projectId = variables.projectId as string | undefined;
+      getSocket()?.emit("data-changed", { entity: "comment", id: projectId });
+      getSocket()?.emit("activity", {
+        type: "COMMENT_ADDED",
+        projectId,
+        message: "Comment added",
+        timestamp: new Date().toISOString(),
+      });
     },
   });
 }

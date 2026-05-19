@@ -294,3 +294,304 @@ Stage Summary:
   4. Enhanced dashboard: 6 stat cards, activity feed, deadline timeline, revenue trend
   5. Notification center: bell icon, overdue/deadline/payment alerts
   6. Keyboard shortcuts: G+D/P/B/F navigation, N new project, Escape back
+
+---
+Task ID: 4.1
+Agent: Theme Toggle Agent
+Task: Implement Light/Dark Theme Toggle for Nexty Labs Project Tracker
+
+Work Log:
+- Updated `src/app/globals.css` — Complete theme system overhaul:
+  - Restructured CSS variables: `:root` contains dark theme (default), `:root:not(.dark)` contains light theme overrides, `.dark` contains dark theme values
+  - Added light theme shadcn/ui variables in `:root:not(.dark)`: white backgrounds, zinc-50/100 surfaces, blue-500 primary, zinc-200 borders
+  - Added light theme Nexty Labs custom color overrides in `:root:not(.dark)`: base-bg=#ffffff, base-card=#f9fafb, base-hover=#f4f4f5, base-border=#e4e4e7, text-main=#09090b, text-muted=#71717a, text-subtle=#a1a1aa
+  - Dark theme Nexty Labs custom color overrides explicitly set in `.dark`: base-bg=#09090b, base-card=#111113, base-hover=#18181b, base-border=#27272a, text-main=#fafafa, text-muted=#71717a, text-subtle=#52525b
+  - Fixed date picker: `filter: invert(1)` now only applies in `.dark` mode (was global before)
+  - Removed `disableTransitionOnChange` from ThemeProvider for smooth CSS transitions
+- Created `src/components/ui/theme-toggle.tsx` — Theme toggle component:
+  - Uses `next-themes` `useTheme()` hook with `resolvedTheme` for SSR safety
+  - Sun icon shown in dark mode (click to switch to light), Moon icon shown in light mode (click to switch to dark)
+  - Uses `hidden dark:block` / `block dark:hidden` pattern for no-JS-flash hydration-safe icon switching
+  - Compact design: p-1.5 rounded button with hover states matching app style
+  - Accessible: title and aria-label attributes
+- Updated `src/components/layout/AppSidebar.tsx` — Added theme toggle:
+  - Imported ThemeToggle component
+  - Placed ThemeToggle in sidebar footer between user info and Shortcuts/Logout buttons
+  - Combined ThemeToggle + Shortcuts button in a flex row for compact layout
+  - ThemeToggle sits at left, Shortcuts button fills remaining space
+- Updated `src/app/layout.tsx` — ThemeProvider configuration:
+  - Changed `enableSystem` from `false` to `true` — respects OS preference when no manual selection
+  - Removed `disableTransitionOnChange` for smooth theme transitions via CSS
+  - Default theme remains "dark" to preserve existing behavior
+- All existing `bg-base-bg`, `bg-base-card`, `text-text-main`, etc. class names continue working in both themes
+- No flash of wrong theme: `suppressHydrationWarning` on html element, `className="dark"` default, next-themes script injection
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- Complete light/dark theme system with CSS variable overrides for both shadcn/ui and custom Nexty Labs colors
+- Theme toggle button (Sun/Moon icons) in sidebar footer
+- All 6 custom Nexty Labs color variables adapt to theme: base-bg, base-card, base-hover, base-border, text-main, text-muted, text-subtle
+- Date picker calendar icon invert only in dark mode
+- Smooth CSS transitions between themes (100ms cubic-bezier)
+- System preference detection enabled (enableSystem=true)
+- Default theme remains dark — zero breaking changes to existing appearance
+
+---
+Task ID: 4.2
+Agent: Drag & Drop Agent
+Task: Implement Task Drag & Drop Reorder for Nexty Labs Project Tracker
+
+Work Log:
+- Updated `src/components/project/TaskSection.tsx` — Complete rewrite with drag & drop support:
+  - Replaced simple task list with DndContext + SortableContext from @dnd-kit/core and @dnd-kit/sortable
+  - Each task item is now a `SortableTaskItem` component using `useSortable` hook
+  - Added `GripVertical` drag handle icon on the left of each task (visible on hover, like the delete button)
+  - Drag handle uses `cursor-grab` / `active:cursor-grabbing` for visual feedback
+  - Original position shows `opacity-50` when dragging for ghost effect
+  - Added `DragOverlay` component that renders a floating copy of the dragged task with subtle shadow (`shadow-lg shadow-brand-primary/10`) and border highlight (`border-brand-primary/30`)
+  - PointerSensor with 5px distance activation constraint to prevent accidental drags on click
+  - KeyboardSensor with sortableKeyboardCoordinates for keyboard accessibility
+  - Tasks sorted by `order` field before rendering
+  - On drag end: uses `arrayMove` from @dnd-kit/sortable to calculate new order, then calls `onReorderTasks` with reordered array (each task's `order` updated to its new index)
+  - Empty task state is NOT draggable (DndContext only renders when tasks.length > 0)
+  - Added `onReorderTasks` prop to TaskSectionProps interface
+  - Preserved all existing functionality: checkbox toggle, delete button (hover-to-show), AnimatePresence
+  - Drag handle does NOT interfere with checkbox click area (separate button elements)
+  - Added ARIA labels on drag handle ("Drag to reorder"), checkbox, and delete button
+- Updated `src/components/views/ProjectDetailView.tsx` — Added reorder handler:
+  - Imported `Task` type from @/lib/types
+  - Added `handleReorderTasks` async function that maps reordered tasks to `{ title, isCompleted, order }` and calls `updateProjectMutation.mutateAsync`
+  - Error toast: "Gagal mengubah urutan task"
+  - Passed `onReorderTasks={handleReorderTasks}` to TaskSection component
+- All @dnd-kit packages already installed (@dnd-kit/core 6.3.1, @dnd-kit/sortable 10.0.0, @dnd-kit/utilities 3.2.2)
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- Task list in Project Detail view now supports drag-and-drop reordering via @dnd-kit
+- Drag handle (GripVertical icon) appears on hover to the left of each task
+- DragOverlay shows floating copy with brand-primary border/shadow during drag
+- Reorder persists to backend via existing updateProjectMutation, updating the `order` field
+- React Query cache invalidation handles UI refresh after mutation
+- Keyboard sorting supported via KeyboardSensor
+- All existing task functionality preserved (toggle, delete, add)
+- No new dependencies needed — all @dnd-kit packages pre-installed
+
+---
+Task ID: 4.5
+Agent: Inline Edit Agent
+Task: Implement Task Inline Edit/Rename for Nexty Labs Project Tracker
+
+Work Log:
+- Updated `src/components/project/TaskSection.tsx` — Added inline rename to SortableTaskItem:
+  - Added `useState`, `useRef`, `useEffect` imports for edit state management
+  - Added `Pencil` icon import from lucide-react
+  - Added `onEditTask: (taskId: string, newTitle: string) => void` prop to TaskSectionProps interface
+  - Added `onEdit` prop to SortableTaskItem component signature
+  - Added `isEditing` / `editValue` local state and `inputRef` for the edit input
+  - `useSortable` now accepts `{ id: task.id, disabled: isEditing }` to disable drag when editing
+  - `handleDoubleClick`: sets editValue to task.title and enters edit mode
+  - `handleSave`: trims value, calls onEdit if changed and non-empty, exits edit mode
+  - `handleCancel`: reverts editValue to task.title and exits edit mode
+  - `useEffect` auto-focuses and selects all text in input when isEditing becomes true
+  - In edit mode: renders `<input>` with `border-brand-primary`, handles Enter/Escape/Blur
+  - In view mode: renders `<span>` with `cursor-text` and `onDoubleClick`, `title="Double-click untuk edit"`
+  - Added Pencil icon button (opacity-0 group-hover:opacity-100, same pattern as Trash icon) — click enters edit mode
+  - Drag handle is visually dimmed (opacity-20) and disabled when task is being edited
+  - Completed tasks (line-through) remain editable
+  - Empty titles are not saved (revert to original if trimmed value is empty)
+  - Passed `onEdit={onEditTask}` to each SortableTaskItem from the parent TaskSection
+- Updated `src/components/views/ProjectDetailView.tsx` — Added edit handler:
+  - Added `handleEditTask` async function: maps tasks with updated title, calls `updateProjectMutation.mutateAsync` with `{ id, tasks: [...] }`, toast success "Task diupdate" / error "Gagal mengupdate task"
+  - Passed `onEditTask={handleEditTask}` prop to TaskSection component
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- Task titles can be renamed inline via double-click or pencil icon click
+- Edit mode: auto-focused input with all text selected, Enter saves, Escape cancels, Blur saves
+- Drag temporarily disabled for the item being edited (useSortable disabled prop)
+- Empty titles revert to original — no blank task names allowed
+- Pencil icon appears on hover as subtle edit hint (same pattern as delete button)
+- Completed tasks (line-through) are still editable
+- Edit persists to backend via updateProjectMutation with React Query cache invalidation
+
+---
+Task ID: 4.3
+Agent: Project Duplication Agent
+Task: Implement Project Duplication Feature for Nexty Labs Project Tracker
+
+Work Log:
+- Created `src/app/api/projects/[id]/duplicate/route.ts` — POST endpoint for project duplication:
+  - Finds original project with tasks included
+  - Returns 404 if project not found
+  - Creates duplicate with clean state: NEW status, 0% progress, 0 paid/expense, UNPAID payment status
+  - Project name appended with " (Copy)"
+  - Tasks copied but all marked as incomplete, order preserved
+  - Tech stack copied (already JSON string), budget copied, deadline copied
+  - Start date reset to empty, completedDate reset to null
+  - Attachments, transactions, comments, and activity logs NOT copied
+  - Creates activity log for the duplicate: "Project diduplikasi dari [original name]"
+  - Returns full project data with parsed techStack
+- Created `src/hooks/useDuplicateProject.ts` — React Query mutation hook:
+  - Calls POST /api/projects/[id]/duplicate
+  - Invalidates ["projects"] query key on success
+  - Success toast: "Project berhasil diduplikasi!"
+  - Error toast with server error message
+- Updated `src/components/project/ProjectHeader.tsx` — Added duplicate button:
+  - Added `onDuplicate?: () => void` and `duplicateLoading?: boolean` props
+  - Ghost variant button with Copy icon and "Duplikasi" text, positioned in header navigation area
+  - Shows Loader2 spinner when duplicating
+  - Button disabled during loading
+- Updated `src/components/views/ProjectDetailView.tsx` — Wired up duplicate:
+  - Imported useDuplicateProject hook
+  - Added handleDuplicate handler that calls mutateAsync and navigates back on success
+  - Passed onDuplicate and duplicateLoading props to ProjectHeader
+- Tested API endpoint: duplicated project with tasks correctly creates copy with all tasks reset to incomplete, clean financial state, no transactions/comments/attachments
+- Activity log correctly created on duplicate: "Project diduplikasi dari [original name]"
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- Project duplication feature fully implemented with API endpoint, React Query hook, and UI button
+- Duplicated projects have clean state: NEW status, 0% progress, no payments/expenses, all tasks incomplete
+- Only project metadata (name+Copy, client, lead, description, priority, category, techStack, budget, deadline, notes) and tasks are copied
+- Transactions, comments, attachments, and activity logs are NOT carried over
+- Duplicate button appears in ProjectHeader next to project title with loading state
+- After duplication, user is navigated back to projects list where they can see the new project
+
+---
+Task ID: 4.4
+Agent: Settings View Agent
+Task: Implement Settings View for Nexty Labs Project Tracker
+
+Work Log:
+- Created `src/stores/preferences-store.ts` — Zustand store for user preferences with localStorage persistence:
+  - Preferences interface: defaultView (string), showShortcutHints (boolean), compactMode (boolean)
+  - Single JSON object stored in localStorage under "nexty_prefs" key
+  - loadPreferences() helper with safe JSON parse and default fallback
+  - savePreferences() helper writes to localStorage on every update
+  - Three setter methods: setDefaultView, setShowShortcutHints, setCompactMode — each updates the full preferences object and persists
+  - Initializes from localStorage on client-side module load
+- Created `src/app/api/auth/profile/route.ts` — PATCH endpoint for profile update:
+  - Accepts userId and name in request body
+  - Returns 400 if userId or name missing
+  - Updates user name via Prisma db.user.update
+  - Returns updated user data (id, email, name, role)
+  - Returns 500 with error message on failure
+- Created `src/components/views/SettingsView.tsx` — Full settings page with 4 sections:
+  - **A. Profile Section**: Displays current user email and role (read-only), editable name field with Input + Save button, PATCH /api/auth/profile on save, updates auth store with new name, Enter key to save, loading spinner while saving
+  - **B. Appearance Section**: Theme selector with 3 options (Light/Dark/System) using RadioGroup, each option shows icon + label + description + color preview swatch, active option highlighted with brand-primary border and dot indicator, uses next-themes setTheme, shows current resolved theme indicator
+  - **C. Preferences Section**: Default view on login (Select dropdown: Dashboard/Projects/Board), Show shortcut hints (Switch toggle), Compact mode (Switch toggle), all persisted via preferences store + localStorage
+  - **D. Danger Zone Section**: Red-tinted card with red border, Reset all data button with AlertDialog confirmation (calls POST /api/seed), Logout button, loading states with spinner
+  - Clean card-based layout with max-w-4xl, framer-motion staggered animations, consistent with app design system
+- Updated `src/app/page.tsx`:
+  - Added "settings" to ViewType union
+  - Imported SettingsView component
+  - Added case "settings" rendering SettingsView with onNavigate prop
+- Updated `src/components/layout/AppSidebar.tsx`:
+  - Added Settings icon import from lucide-react
+  - Added settingsItem constant with key "settings", label "Settings", icon Settings, shortcut ["G", "S"]
+  - Added divider (hr) before Settings in nav
+  - Settings item uses text-text-subtle instead of text-text-muted for slightly muted appearance
+  - Keyboard shortcut hint G S shown on hover/always on lg+ screens
+- Updated `src/components/layout/BreadcrumbNav.tsx`:
+  - Added Settings icon import from lucide-react
+  - Added settings entry to viewConfig: { label: "Settings", icon: Settings }
+- Updated `src/hooks/useKeyboardShortcuts.ts`:
+  - Added "s": "settings" to the viewMap for G then S sequence shortcut
+- Updated `src/components/search/CommandPalette.tsx`:
+  - Added Settings icon import from lucide-react
+  - Added Settings to NAV_ITEMS array with keywords "preferences profile theme appearance"
+- Updated `src/components/shortcuts/ShortcutsHelpDialog.tsx`:
+  - Added "Go to Settings" with keys ["G", "S"] to NAVIGATION_SHORTCUTS array
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- Complete Settings view with 4 sections: Profile, Appearance, Preferences, Danger Zone
+- Profile editing with PATCH API endpoint and auth store sync
+- Theme selector (Light/Dark/System) using RadioGroup with visual preview indicators
+- Preferences stored in localStorage via Zustand: default view, shortcut hints, compact mode
+- Danger zone with confirmation dialog for data reset and logout
+- Settings accessible from sidebar (with divider, slightly muted), keyboard shortcut G S, command palette, and breadcrumbs
+- All 8 files modified/created with zero lint errors
+
+---
+Task ID: 4.6
+Agent: Real-time Collaboration Agent
+Task: Implement Real-time Collaboration via WebSocket for Nexty Labs Project Tracker
+
+Work Log:
+- Created `mini-services/activity-ws/package.json` — Separate bun project with socket.io dependency and `bun --hot` dev script
+- Created `mini-services/activity-ws/index.ts` — Socket.IO WebSocket server on port 3003:
+  - ActivityEvent interface supporting types: PROJECT_UPDATED, PROJECT_CREATED, PROJECT_DELETED, TASK_UPDATED, TRANSACTION_ADDED, COMMENT_ADDED
+  - `join-project` / `leave-project` room events for project-scoped subscriptions
+  - `activity` event: broadcasts to all clients + project-specific room
+  - `data-changed` event: broadcasts entity change signals (project, transaction, comment) for automatic query invalidation
+  - CORS enabled for all origins (development), path set to "/" for Caddy gateway compatibility
+  - pingTimeout/pingInterval configured for reliable connections
+- Installed `socket.io-client@4.8.3` in main project via `bun add socket.io-client`
+- Created `src/lib/socket.ts` — Socket singleton utility:
+  - `getSocket()`: Lazy-initializes socket connection to `/?XTransformPort=3003` with websocket transport, auto-reconnection (5 attempts, 1s delay)
+  - `disconnectSocket()`: Clean disconnect and null reset
+  - Only creates socket in browser context (typeof window guard)
+- Created `src/hooks/useActivitySocket.ts` — Frontend React hook for real-time sync:
+  - Connects to WebSocket via `io("/?XTransformPort=3003")` with path "/" for Caddy gateway
+  - Listens for `data-changed` events and auto-invalidates React Query caches:
+    - `entity: "project"` → invalidates ["projects"] + ["project", id] if id provided
+    - `entity: "transaction"` → invalidates ["transactions"] + ["projects"] + ["project"]
+    - `entity: "comment"` → invalidates ["projects"] + ["project"]
+  - Returns `emitActivity`, `emitDataChanged`, `joinProject`, `leaveProject` callbacks
+  - Clean disconnect on component unmount
+- Updated `src/hooks/useProjects.ts` — All 3 mutations now emit socket events:
+  - `useCreateProject`: emits data-changed { entity: "project" } + activity PROJECT_CREATED
+  - `useUpdateProject`: emits data-changed { entity: "project", id } + activity PROJECT_UPDATED with projectId
+  - `useDeleteProject`: emits data-changed { entity: "project", id } + activity PROJECT_DELETED with projectId
+- Updated `src/hooks/useProject.ts` — Both mutations emit socket events:
+  - `useUpdateProjectMutation`: emits data-changed { entity: "project", id: projectId } + activity PROJECT_UPDATED
+  - `useDeleteProjectMutation`: emits data-changed { entity: "project", id } + activity PROJECT_DELETED
+- Updated `src/hooks/useTransactions.ts` — Both mutations emit socket events:
+  - `useCreateTransaction`: emits data-changed { entity: "transaction", id: projectId } + activity TRANSACTION_ADDED
+  - `useDeleteTransaction`: emits data-changed { entity: "transaction" } + activity TRANSACTION_ADDED (deletion)
+- Updated `src/hooks/useComments.ts` — Mutation emits socket events:
+  - `useCreateComment`: emits data-changed { entity: "comment", id: projectId } + activity COMMENT_ADDED
+- Updated `src/hooks/useDuplicateProject.ts` — Mutation emits socket events:
+  - `useDuplicateProject`: emits data-changed { entity: "project", id: projectId } + activity PROJECT_CREATED
+- Updated `src/app/page.tsx` — Integrated useActivitySocket hook:
+  - Imported useActivitySocket from @/hooks/useActivitySocket
+  - Called useActivitySocket() in Home component for authenticated users
+  - Enables automatic real-time query invalidation across all tabs/users
+- Installed mini-service dependencies in `mini-services/activity-ws/` (socket.io@4.8.3)
+- Started WebSocket mini-service on port 3003, verified connection via polling endpoint
+- Lint passes clean, dev server compiles successfully
+
+Stage Summary:
+- Complete real-time collaboration system via Socket.IO WebSocket mini-service
+- Mini-service at `mini-services/activity-ws/` on port 3003 with activity and data-changed event broadcasting
+- Frontend connects via `io("/?XTransformPort=3003")` through Caddy gateway (never direct localhost URL)
+- All 8 mutation hooks across 5 files emit socket events on success for cross-tab/user sync
+- `useActivitySocket` hook in page.tsx listens for data-changed events and auto-invalidates React Query caches
+- Socket singleton utility (`src/lib/socket.ts`) for emit calls from mutation hooks without duplicate connections
+- Graceful degradation: app works normally if WebSocket server is not running (socket.io client silently reconnects)
+- Multi-tab sync: changes in one tab automatically reflect in other tabs via query invalidation
+
+---
+Task ID: 4
+Agent: Main Agent (Coordinator)
+Task: Phase 4 — Advanced Features & Collaboration (Complete)
+
+Work Log:
+- Coordinated 6 sub-tasks (4.1–4.6) across multiple specialized agents
+- Verified all lint checks pass clean after all sub-tasks completed
+- Verified dev server compiles and all API endpoints return 200
+- Started WebSocket mini-service on port 3003
+
+Stage Summary:
+- **Phase 4 Complete**: All 6 tasks implemented successfully
+- Key improvements:
+  1. Light/Dark theme toggle with full CSS variable system — all custom colors adapt automatically
+  2. Task drag-and-drop reordering via @dnd-kit — reorder tasks with grip handle + overlay
+  3. Project duplication — clone project with tasks, clean financial state, "Name (Copy)"
+  4. Settings view — profile editing, theme selector, preferences, danger zone
+  5. Task inline rename — double-click or pencil icon to edit task title
+  6. Real-time collaboration — WebSocket mini-service for multi-tab sync and auto-refetch
+- New files created: 7 (theme-toggle, useActivitySocket, useDuplicateProject, socket utility, preferences store, Settings view, WS mini-service)
+- Modified files: 10+ (globals.css, TaskSection, ProjectHeader, ProjectDetailView, AppSidebar, page.tsx, all mutation hooks)
+- WebSocket service running on port 3003 with Socket.IO

@@ -122,6 +122,7 @@ export function useKeyboardShortcuts(config: ShortcutConfig): void {
           p: "projects",
           b: "board",
           f: "finance",
+          s: "settings",
         };
 
         const view = viewMap[key];

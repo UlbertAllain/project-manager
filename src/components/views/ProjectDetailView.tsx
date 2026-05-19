@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Project } from "@/lib/types";
+import { Project, Task } from "@/lib/types";
 import { STATUS_LABELS } from "@/lib/constants";
 import { recalculateProgress } from "@/lib/helpers";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,6 +19,7 @@ import { motion } from "framer-motion";
 import { useProject, useUpdateProjectMutation } from "@/hooks/useProject";
 import { useCreateTransaction, useDeleteTransaction } from "@/hooks/useTransactions";
 import { useCreateComment } from "@/hooks/useComments";
+import { useDuplicateProject } from "@/hooks/useDuplicateProject";
 
 // Decomposed components
 import { ProjectHeader } from "@/components/project/ProjectHeader";
@@ -43,6 +44,7 @@ export function ProjectDetailView({
   const createTransactionMutation = useCreateTransaction();
   const deleteTransactionMutation = useDeleteTransaction();
   const createCommentMutation = useCreateComment();
+  const duplicateProjectMutation = useDuplicateProject();
   const { user } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState("overview");
@@ -77,6 +79,16 @@ export function ProjectDetailView({
     type: "task" | "transaction";
     id: string;
   } | null>(null);
+
+  // --- Duplicate handler ---
+  const handleDuplicate = async () => {
+    try {
+      await duplicateProjectMutation.mutateAsync(projectId);
+      onBack(); // Navigate back to projects list
+    } catch {
+      // Error handled by mutation
+    }
+  };
 
   // --- Task handlers ---
   const handleAddTask = async () => {
@@ -147,6 +159,44 @@ export function ProjectDetailView({
       toast.error("Gagal menghapus task");
     } finally {
       setDeleteTarget(null);
+    }
+  };
+
+  // --- Task edit ---
+  const handleEditTask = async (taskId: string, newTitle: string) => {
+    if (!project) return;
+    const tasks = project.tasks.map((t) =>
+      t.id === taskId ? { ...t, title: newTitle } : t
+    );
+
+    try {
+      await updateProjectMutation.mutateAsync({
+        id: projectId,
+        tasks: tasks.map((t) => ({
+          title: t.title,
+          isCompleted: t.isCompleted,
+          order: t.order,
+        })),
+      });
+      toast.success("Task diupdate");
+    } catch {
+      toast.error("Gagal mengupdate task");
+    }
+  };
+
+  // --- Task reorder ---
+  const handleReorderTasks = async (reorderedTasks: Task[]) => {
+    try {
+      await updateProjectMutation.mutateAsync({
+        id: projectId,
+        tasks: reorderedTasks.map((t, index) => ({
+          title: t.title,
+          isCompleted: t.isCompleted,
+          order: index,
+        })),
+      });
+    } catch {
+      toast.error("Gagal mengubah urutan task");
     }
   };
 
@@ -296,6 +346,8 @@ export function ProjectDetailView({
         onBack={onBack}
         onStatusChange={handleStatusChange}
         statusSubmitting={statusSubmitting}
+        onDuplicate={handleDuplicate}
+        duplicateLoading={duplicateProjectMutation.isPending}
       />
 
       {/* Notes (if any) - shown above tabs */}
@@ -360,6 +412,8 @@ export function ProjectDetailView({
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
             onDeleteTask={(id) => setDeleteTarget({ type: "task", id })}
+            onReorderTasks={handleReorderTasks}
+            onEditTask={handleEditTask}
           />
         </TabsContent>
 

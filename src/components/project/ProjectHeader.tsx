@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Copy, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ProjectHeaderProps {
@@ -27,6 +27,8 @@ interface ProjectHeaderProps {
   onBack: () => void;
   onStatusChange: (status: string) => void;
   statusSubmitting: boolean;
+  onDuplicate?: () => void;
+  duplicateLoading?: boolean;
 }
 
 export function ProjectHeader({
@@ -34,6 +36,8 @@ export function ProjectHeader({
   onBack,
   onStatusChange,
   statusSubmitting,
+  onDuplicate,
+  duplicateLoading,
 }: ProjectHeaderProps) {
   const deadlineStatus = getDeadlineStatus(project.status, project.deadline);
   const paidPercent =
@@ -62,6 +66,23 @@ export function ProjectHeader({
           </h1>
           <p className="text-sm text-text-muted">{project.clientName}</p>
         </div>
+        {onDuplicate && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDuplicate}
+            disabled={duplicateLoading}
+            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
+            title="Duplikasi Project"
+          >
+            {duplicateLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+            <span className="text-xs">Duplikasi</span>
+          </Button>
+        )}
       </div>
 
       {/* Status & Info Bar */}
