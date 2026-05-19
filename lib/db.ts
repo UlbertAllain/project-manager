@@ -65,24 +65,30 @@ async function getProjectWithRelations(projectId: string): Promise<ProjectWithRe
 
   const projectData = projectDoc.data()!;
 
-  // Fetch related collections in parallel
+  // Fetch related collections in parallel — use get() without orderBy to avoid index issues
   const [tasksSnap, attachmentsSnap, transactionsSnap, commentsSnap, logsSnap] = await Promise.all([
-    collections.tasks.where('projectId', '==', projectId).orderBy('order', 'asc').get(),
+    collections.tasks.where('projectId', '==', projectId).get(),
     collections.attachments.where('projectId', '==', projectId).get(),
-    collections.transactions.where('projectId', '==', projectId).orderBy('date', 'desc').get(),
-    collections.comments.where('projectId', '==', projectId).orderBy('createdAt', 'desc').get(),
-    collections.activityLogs.where('projectId', '==', projectId).orderBy('timestamp', 'desc').get(),
+    collections.transactions.where('projectId', '==', projectId).get(),
+    collections.comments.where('projectId', '==', projectId).get(),
+    collections.activityLogs.where('projectId', '==', projectId).get(),
   ]);
+
+  // Sort in memory instead of Firestore to avoid composite index requirements
+  const tasks = tasksSnap.docs.map((d) => docToObj<Task>(d)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const transactions = transactionsSnap.docs.map((d) => docToObj<Transaction>(d)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const comments = commentsSnap.docs.map((d) => docToObj<Comment>(d)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const logs = logsSnap.docs.map((d) => docToObj<ActivityLog>(d)).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return {
     id: projectDoc.id,
     ...projectData,
     techStack: JSON.parse(projectData.techStack || '[]'),
-    tasks: tasksSnap.docs.map((d) => docToObj<Task>(d)),
+    tasks,
     attachments: attachmentsSnap.docs.map((d) => docToObj<LinkAttachment>(d)),
-    transactions: transactionsSnap.docs.map((d) => docToObj<Transaction>(d)),
-    comments: commentsSnap.docs.map((d) => docToObj<Comment>(d)),
-    logs: logsSnap.docs.map((d) => docToObj<ActivityLog>(d)),
+    transactions,
+    comments,
+    logs,
   } as ProjectWithRelations;
 }
 
@@ -142,16 +148,20 @@ export const db = {
       include?: Record<string, unknown>;
       where?: Record<string, unknown>;
     }): Promise<Record<string, unknown>[]> => {
-      let query = collections.projects.orderBy('createdAt', 'desc');
+      // Use simple get() without orderBy to avoid index issues
+      // Sort in memory instead
+      let query = collections.projects;
 
       if (opts?.where) {
+        let q = collections.projects;
         for (const [key, value] of Object.entries(opts.where)) {
           if (key === 'id' && typeof value === 'object' && value !== null && 'in' in (value as object)) {
-            query = query.where(key, 'in', (value as { in: string[] }).in);
+            q = q.where(key, 'in', (value as { in: string[] }).in);
           } else {
-            query = query.where(key, '==', value);
+            q = q.where(key, '==', value);
           }
         }
+        query = q;
       }
 
       const snap = await query.get();
@@ -166,30 +176,38 @@ export const db = {
         };
 
         if (opts?.include) {
+          // Use simple where queries without orderBy to avoid composite index requirements
           if ('tasks' in opts.include) {
-            const tasksSnap = await collections.tasks.where('projectId', '==', doc.id).orderBy('order', 'asc').get();
-            project.tasks = tasksSnap.docs.map((d) => docToObj<Task>(d));
+            const tasksSnap = await collections.tasks.where('projectId', '==', doc.id).get();
+            project.tasks = tasksSnap.docs.map((d) => docToObj<Task>(d)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
           }
           if ('attachments' in opts.include) {
             const attSnap = await collections.attachments.where('projectId', '==', doc.id).get();
             project.attachments = attSnap.docs.map((d) => docToObj<LinkAttachment>(d));
           }
           if ('transactions' in opts.include) {
-            const txSnap = await collections.transactions.where('projectId', '==', doc.id).orderBy('date', 'desc').get();
-            project.transactions = txSnap.docs.map((d) => docToObj<Transaction>(d));
+            const txSnap = await collections.transactions.where('projectId', '==', doc.id).get();
+            project.transactions = txSnap.docs.map((d) => docToObj<Transaction>(d)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           }
           if ('comments' in opts.include) {
-            const cmSnap = await collections.comments.where('projectId', '==', doc.id).orderBy('createdAt', 'desc').get();
-            project.comments = cmSnap.docs.map((d) => docToObj<Comment>(d));
+            const cmSnap = await collections.comments.where('projectId', '==', doc.id).get();
+            project.comments = cmSnap.docs.map((d) => docToObj<Comment>(d)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           }
           if ('logs' in opts.include) {
-            const logSnap = await collections.activityLogs.where('projectId', '==', doc.id).orderBy('timestamp', 'desc').get();
-            project.logs = logSnap.docs.map((d) => docToObj<ActivityLog>(d));
+            const logSnap = await collections.activityLogs.where('projectId', '==', doc.id).get();
+            project.logs = logSnap.docs.map((d) => docToObj<ActivityLog>(d)).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           }
         }
 
         projects.push(project);
       }
+
+      // Sort in memory by createdAt desc (handle missing field gracefully)
+      projects.sort((a, b) => {
+        const dateA = new Date((a.createdAt as string) || 0).getTime();
+        const dateB = new Date((b.createdAt as string) || 0).getTime();
+        return dateB - dateA;
+      });
 
       return projects;
     },
@@ -358,18 +376,21 @@ export const db = {
   // ===== TRANSACTION =====
   transaction: {
     findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string>; include?: Record<string, unknown> }): Promise<Record<string, unknown>[]> => {
-      let query = collections.transactions.orderBy('date', 'desc');
+      // Use simple get() without orderBy to avoid composite index requirements
+      let query = collections.transactions;
 
       if (opts?.where) {
+        let q = collections.transactions;
         for (const [key, value] of Object.entries(opts.where)) {
           if (key === 'date' && typeof value === 'object' && value !== null) {
             const dateFilter = value as Record<string, string>;
-            if (dateFilter.gte) query = query.where('date', '>=', dateFilter.gte);
-            if (dateFilter.lte) query = query.where('date', '<=', dateFilter.lte);
-          } else {
-            query = query.where(key, '==', value);
+            if (dateFilter.gte) q = q.where('date', '>=', dateFilter.gte);
+            if (dateFilter.lte) q = q.where('date', '<=', dateFilter.lte);
+          } else if (key === 'projectId') {
+            q = q.where(key, '==', value);
           }
         }
+        query = q;
       }
 
       const snap = await query.get();
@@ -385,6 +406,13 @@ export const db = {
 
         transactions.push(txData);
       }
+
+      // Sort in memory by date desc
+      transactions.sort((a, b) => {
+        const dateA = new Date((a.date as string) || 0).getTime();
+        const dateB = new Date((b.date as string) || 0).getTime();
+        return dateB - dateA;
+      });
 
       return transactions;
     },
@@ -418,12 +446,14 @@ export const db = {
   // ===== COMMENT =====
   comment: {
     findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string> }): Promise<Comment[]> => {
-      let query = collections.comments.orderBy('createdAt', 'desc');
+      let query = collections.comments;
       if (opts?.where?.projectId) {
-        query = query.where('projectId', '==', opts.where.projectId);
+        query = query.where('projectId', '==', opts.where.projectId as string);
       }
       const snap = await query.get();
-      return snap.docs.map((d) => docToObj<Comment>(d));
+      const comments = snap.docs.map((d) => docToObj<Comment>(d));
+      // Sort in memory by createdAt desc
+      return comments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     },
 
     create: async ({ data }: { data: Record<string, unknown> }): Promise<Comment> => {
@@ -438,17 +468,14 @@ export const db = {
   // ===== ACTIVITY LOG =====
   activityLog: {
     findMany: async (opts?: { where?: Record<string, unknown>; orderBy?: Record<string, string>; take?: number; include?: Record<string, unknown> }): Promise<Record<string, unknown>[]> => {
-      let query = collections.activityLogs.orderBy('timestamp', 'desc');
+      let query = collections.activityLogs;
 
       if (opts?.where?.projectId) {
-        query = query.where('projectId', '==', opts.where.projectId);
+        query = query.where('projectId', '==', opts.where.projectId as string);
       }
 
-      if (opts?.take) {
-        query = query.limit(opts.take);
-      }
-
-      const snap = await query.get();
+      // Don't use orderBy in Firestore — sort in memory
+      const snap = await (opts?.take ? query.limit(opts.take) : query).get();
       const logs: Record<string, unknown>[] = [];
 
       for (const doc of snap.docs) {
@@ -463,6 +490,13 @@ export const db = {
 
         logs.push(logData);
       }
+
+      // Sort in memory by timestamp desc
+      logs.sort((a, b) => {
+        const dateA = new Date((a.timestamp as string) || 0).getTime();
+        const dateB = new Date((b.timestamp as string) || 0).getTime();
+        return dateB - dateA;
+      });
 
       return logs;
     },

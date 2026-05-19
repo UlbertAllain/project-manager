@@ -73,6 +73,218 @@ interface ProjectsViewProps {
   onSelectProject: (id: string) => void;
 }
 
+const emptyForm = {
+  projectName: "",
+  clientName: "",
+  projectLead: "",
+  description: "",
+  status: "NEW",
+  priority: "MEDIUM",
+  category: "WEB",
+  techStack: "",
+  startDate: "",
+  deadline: "",
+  budget: "",
+  notes: "",
+};
+
+// Extracted OUTSIDE the component to avoid re-creation on every render
+function ProjectFormFields({ form, setForm }: {
+  form: typeof emptyForm;
+  setForm: React.Dispatch<React.SetStateAction<typeof emptyForm>>;
+}) {
+  return (
+    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Nama Project *
+          </label>
+          <Input
+            value={form.projectName}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, projectName: e.target.value }))
+            }
+            placeholder="Nama project"
+            className="h-8 text-sm bg-base-bg border-base-border"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Nama Client *
+          </label>
+          <Input
+            value={form.clientName}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, clientName: e.target.value }))
+            }
+            placeholder="Nama client"
+            className="h-8 text-sm bg-base-bg border-base-border"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Project Lead
+          </label>
+          <Input
+            value={form.projectLead}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, projectLead: e.target.value }))
+            }
+            placeholder="Project lead"
+            className="h-8 text-sm bg-base-bg border-base-border"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Budget (Rp)
+          </label>
+          <Input
+            type="number"
+            value={form.budget}
+            onChange={(e) => setForm((prev) => ({ ...prev, budget: e.target.value }))}
+            placeholder="0"
+            className="h-8 text-sm bg-base-bg border-base-border"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="block text-xs text-text-muted mb-1">Status</label>
+          <Select
+            value={form.status}
+            onValueChange={(v) => setForm((prev) => ({ ...prev, status: v }))}
+          >
+            <SelectTrigger className="h-8 text-sm bg-base-bg border-base-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PROJECT_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Priority
+          </label>
+          <Select
+            value={form.priority}
+            onValueChange={(v) => setForm((prev) => ({ ...prev, priority: v }))}
+          >
+            <SelectTrigger className="h-8 text-sm bg-base-bg border-base-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Category
+          </label>
+          <Select
+            value={form.category}
+            onValueChange={(v) => setForm((prev) => ({ ...prev, category: v }))}
+          >
+            <SelectTrigger className="h-8 text-sm bg-base-bg border-base-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIES.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Start Date
+          </label>
+          <Input
+            type="date"
+            value={form.startDate}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, startDate: e.target.value }))
+            }
+            className="h-8 text-sm bg-base-bg border-base-border"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">
+            Deadline
+          </label>
+          <Input
+            type="date"
+            value={form.deadline}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, deadline: e.target.value }))
+            }
+            className="h-8 text-sm bg-base-bg border-base-border"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs text-text-muted mb-1">
+          Tech Stack (comma-separated)
+        </label>
+        <Input
+          value={form.techStack}
+          onChange={(e) =>
+            setForm((prev) => ({ ...prev, techStack: e.target.value }))
+          }
+          placeholder="Next.js, TypeScript, Firebase"
+          className="h-8 text-sm bg-base-bg border-base-border"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-text-muted mb-1">
+          Description
+        </label>
+        <Textarea
+          value={form.description}
+          onChange={(e) =>
+            setForm((prev) => ({ ...prev, description: e.target.value }))
+          }
+          placeholder="Deskripsi project..."
+          rows={2}
+          className="text-sm bg-base-bg border-base-border resize-none"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-text-muted mb-1">Notes</label>
+        <Textarea
+          value={form.notes}
+          onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+          placeholder="Catatan tambahan..."
+          rows={2}
+          className="text-sm bg-base-bg border-base-border resize-none"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
   const { data: projects = [], isLoading: loading } = useProjects();
   const createProject = useCreateProject();
@@ -100,44 +312,18 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
   }, []);
 
   // Form state
-  const [form, setForm] = useState({
-    projectName: "",
-    clientName: "",
-    projectLead: "",
-    description: "",
-    status: "NEW",
-    priority: "MEDIUM",
-    category: "WEB",
-    techStack: "",
-    startDate: "",
-    deadline: "",
-    budget: "",
-    notes: "",
-  });
+  const [form, setForm] = useState(emptyForm);
 
-  const resetForm = () => {
-    setForm({
-      projectName: "",
-      clientName: "",
-      projectLead: "",
-      description: "",
-      status: "NEW",
-      priority: "MEDIUM",
-      category: "WEB",
-      techStack: "",
-      startDate: "",
-      deadline: "",
-      budget: "",
-      notes: "",
-    });
-  };
+  const resetForm = useCallback(() => {
+    setForm(emptyForm);
+  }, []);
 
-  const openCreateDialog = () => {
+  const openCreateDialog = useCallback(() => {
     resetForm();
     setShowCreateDialog(true);
-  };
+  }, [resetForm]);
 
-  const openEditDialog = (project: Project) => {
+  const openEditDialog = useCallback((project: Project) => {
     setEditingProject(project);
     setForm({
       projectName: project.projectName,
@@ -154,7 +340,7 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
       notes: project.notes,
     });
     setShowEditDialog(true);
-  };
+  }, []);
 
   const handleCreate = async () => {
     if (!form.projectName || !form.clientName) {
@@ -245,197 +431,6 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
       return matchSearch && matchStatus;
     });
   }, [projects, debouncedSearch, statusFilter]);
-
-  const ProjectForm = ({ isEdit }: { isEdit: boolean }) => (
-    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Nama Project *
-          </label>
-          <Input
-            value={form.projectName}
-            onChange={(e) =>
-              setForm({ ...form, projectName: e.target.value })
-            }
-            placeholder="Nama project"
-            className="h-8 text-sm bg-base-bg border-base-border"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Nama Client *
-          </label>
-          <Input
-            value={form.clientName}
-            onChange={(e) =>
-              setForm({ ...form, clientName: e.target.value })
-            }
-            placeholder="Nama client"
-            className="h-8 text-sm bg-base-bg border-base-border"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Project Lead
-          </label>
-          <Input
-            value={form.projectLead}
-            onChange={(e) =>
-              setForm({ ...form, projectLead: e.target.value })
-            }
-            placeholder="Project lead"
-            className="h-8 text-sm bg-base-bg border-base-border"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Budget (Rp)
-          </label>
-          <Input
-            type="number"
-            value={form.budget}
-            onChange={(e) => setForm({ ...form, budget: e.target.value })}
-            placeholder="0"
-            className="h-8 text-sm bg-base-bg border-base-border"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">Status</label>
-          <Select
-            value={form.status}
-            onValueChange={(v) => setForm({ ...form, status: v })}
-          >
-            <SelectTrigger className="h-8 text-sm bg-base-bg border-base-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PROJECT_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Priority
-          </label>
-          <Select
-            value={form.priority}
-            onValueChange={(v) => setForm({ ...form, priority: v })}
-          >
-            <SelectTrigger className="h-8 text-sm bg-base-bg border-base-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PRIORITIES.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Category
-          </label>
-          <Select
-            value={form.category}
-            onValueChange={(v) => setForm({ ...form, category: v })}
-          >
-            <SelectTrigger className="h-8 text-sm bg-base-bg border-base-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Start Date
-          </label>
-          <Input
-            type="date"
-            value={form.startDate}
-            onChange={(e) =>
-              setForm({ ...form, startDate: e.target.value })
-            }
-            className="h-8 text-sm bg-base-bg border-base-border"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-text-muted mb-1">
-            Deadline
-          </label>
-          <Input
-            type="date"
-            value={form.deadline}
-            onChange={(e) =>
-              setForm({ ...form, deadline: e.target.value })
-            }
-            className="h-8 text-sm bg-base-bg border-base-border"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-xs text-text-muted mb-1">
-          Tech Stack (comma-separated)
-        </label>
-        <Input
-          value={form.techStack}
-          onChange={(e) =>
-            setForm({ ...form, techStack: e.target.value })
-          }
-          placeholder="Next.js, TypeScript, Prisma"
-          className="h-8 text-sm bg-base-bg border-base-border"
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs text-text-muted mb-1">
-          Description
-        </label>
-        <Textarea
-          value={form.description}
-          onChange={(e) =>
-            setForm({ ...form, description: e.target.value })
-          }
-          placeholder="Deskripsi project..."
-          rows={2}
-          className="text-sm bg-base-bg border-base-border resize-none"
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs text-text-muted mb-1">Notes</label>
-        <Textarea
-          value={form.notes}
-          onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          placeholder="Catatan tambahan..."
-          rows={2}
-          className="text-sm bg-base-bg border-base-border resize-none"
-        />
-      </div>
-    </div>
-  );
 
   if (loading) {
     return (
@@ -707,7 +702,7 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
               Buat Project Baru
             </DialogTitle>
           </DialogHeader>
-          <ProjectForm isEdit={false} />
+          <ProjectFormFields form={form} setForm={setForm} />
           <DialogFooter>
             <Button
               variant="ghost"
@@ -746,7 +741,7 @@ export function ProjectsView({ onSelectProject }: ProjectsViewProps) {
               Edit Project
             </DialogTitle>
           </DialogHeader>
-          <ProjectForm isEdit={true} />
+          <ProjectFormFields form={form} setForm={setForm} />
           <DialogFooter>
             <Button
               variant="ghost"

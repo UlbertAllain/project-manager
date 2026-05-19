@@ -6,20 +6,20 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET() {
   try {
     const projects = await db.project.findMany({
-      orderBy: { createdAt: "desc" },
       include: {
-        tasks: { orderBy: { order: "asc" } },
+        tasks: true,
         attachments: true,
-        transactions: { orderBy: { date: "desc" } },
-        comments: { orderBy: { createdAt: "desc" } },
-        logs: { orderBy: { timestamp: "desc" } },
+        transactions: true,
+        comments: true,
+        logs: true,
       },
     });
 
-    // Parse techStack JSON string back to array, exclude coverImage for performance
+    // Exclude coverImage for performance, techStack already parsed in findMany
     const result = projects.map(({ coverImage: _ci, ...p }) => ({
       ...p,
-      techStack: JSON.parse(p.techStack || "[]"),
+      // Ensure techStack is always an array
+      techStack: Array.isArray(p.techStack) ? p.techStack : JSON.parse((p.techStack as string) || "[]"),
     }));
 
     return NextResponse.json({ data: result });
