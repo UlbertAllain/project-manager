@@ -1,14 +1,46 @@
 import { db } from "@/lib/db";
+import { collections, adminDb } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 
-// POST /api/seed — seed demo data
+// Helper to delete all documents in a collection
+async function deleteCollection(collectionRef: FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData>) {
+  const batchSize = 500;
+  let deleted = 0;
+  while (true) {
+    const snap = await collectionRef.limit(batchSize).get();
+    if (snap.empty) break;
+    const batch = adminDb.batch();
+    snap.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    deleted += snap.size;
+    if (snap.size < batchSize) break;
+  }
+  return deleted;
+}
+
+// POST /api/seed — reset + seed demo data
 export async function POST() {
   try {
-    // Create demo user — matches existing Firebase user
-    const user = await db.user.upsert({
-      where: { email: "admin@nextylab.com" },
-      update: {},
-      create: {
+    // ===== STEP 1: RESET — hapus semua data dulu =====
+    const collectionNames = [
+      "activityLogs",
+      "comments",
+      "transactions",
+      "attachments",
+      "tasks",
+      "projects",
+      "users",
+    ] as const;
+
+    for (const name of collectionNames) {
+      await deleteCollection(collections[name]);
+    }
+
+    // ===== STEP 2: SEED — bikin data baru =====
+
+    // Create demo user
+    const user = await db.user.create({
+      data: {
         email: "admin@nextylab.com",
         name: "Admin Nexty Labs",
         password: "admin123",
@@ -75,7 +107,6 @@ export async function POST() {
     });
     projects.push({ id: p1.id, projectName: p1.projectName });
 
-    // Activity log for project 1
     await db.activityLog.create({
       data: { projectId: p1.id, action: "CREATED", message: `Project "${p1.projectName}" berhasil dibuat.` },
     });
@@ -223,7 +254,7 @@ export async function POST() {
     projects.push({ id: p6.id, projectName: p6.projectName });
 
     return NextResponse.json({
-      message: "Seed data berhasil dibuat",
+      message: "Reset & seed berhasil! Semua data lama dihapus, data baru dibuat.",
       user: { email: user.email, name: user.name },
       projectsCreated: projects.length,
     });
